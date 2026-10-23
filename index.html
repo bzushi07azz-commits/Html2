@@ -152,6 +152,31 @@
   .net-status{min-height:20px;margin:2px 0 14px;font-size:14px;color:#b8c4ee;line-height:1.4}
   .modal-box button:disabled{opacity:.55;cursor:default}
 
+  /* ---------- LOBBY DE SALAS ---------- */
+  .modal-box.wide{max-width:400px}
+  .lobby-info{font-size:13px;color:#9aa8d4;margin:-6px 0 12px;line-height:1.4}
+  #roomList{display:flex;flex-direction:column;gap:8px;max-height:34vh;overflow-y:auto;margin-bottom:12px;text-align:left}
+  .room-item{
+    display:flex;align-items:center;gap:10px;padding:10px 12px;border-radius:14px;cursor:pointer;
+    background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.12);color:#eef2ff;transition:.15s;
+  }
+  .room-item:hover{border-color:rgba(120,170,255,.6);background:rgba(120,170,255,.14)}
+  .room-item .rn{flex:1;min-width:0;font-weight:800;font-size:15px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .room-item .rm{display:block;font-size:11px;color:#9aa8d4;font-weight:600;margin-top:2px}
+  .room-item .rc{font-size:13px;letter-spacing:2px;color:#ffd43b;font-weight:800}
+  .modal-box input.txt-in{
+    width:100%;margin-bottom:12px;padding:13px;border-radius:14px;
+    border:1px solid rgba(255,255,255,.18);background:rgba(255,255,255,.07);color:#fff;
+    font-size:16px;font-weight:700;font-family:inherit;outline:none;
+    -webkit-user-select:text;user-select:text;
+  }
+  .modal-box input.txt-in:focus{border-color:rgba(120,170,255,.7)}
+  .join-row{display:flex;gap:8px;margin-bottom:10px}
+  .modal-box .join-row input.code-in{flex:1;min-width:0;width:auto;margin:0;font-size:20px;letter-spacing:4px}
+  .modal-box .join-row button{width:auto;margin:0;padding:0 18px}
+  .modal-box button.primary{background:linear-gradient(135deg,#2f6bff,#4d9bff);border-color:transparent}
+  .label-left{text-align:left}
+
   @media (max-width:520px){
     #menu{padding-top:4px}
     .mode-card{padding:12px}
@@ -189,7 +214,7 @@
     <button class="mode-card" id="joinCard" data-online="1">
       <span class="ico">🌐</span>
       <span><span class="t">Unirse a sala online</span>
-      <span class="d">¿Tu amigo creó una sala? Escribe su código y juega desde tu propio dispositivo.</span></span>
+      <span class="d">Mira las salas abiertas o entra con el código de tu amigo y juega desde tu propio dispositivo.</span></span>
     </button>
   </div>
 </div>
@@ -199,9 +224,48 @@
   <div class="modal-box">
     <h2>¿Contra quién juegas?</h2>
     <button data-opp="cpu">🤖 Contra la máquina</button>
-    <button data-opp="online">🌐 Online (cada uno en su dispositivo)</button>
+    <button data-opp="online">🌐 Online · ver salas / crear sala</button>
     <button data-opp="human">👥 2 jugadores (misma pantalla)</button>
     <button class="cancel" id="cancelOpp">Cancelar</button>
+  </div>
+</div>
+
+<!-- ============ LOBBY DE SALAS ============ -->
+<div id="lobbyModal" class="modal hidden">
+  <div class="modal-box wide">
+    <h2 id="lobbyTitle">🌐 Salas online</h2>
+    <div id="lobbyInfo" class="lobby-info">Buscando salas…</div>
+    <div id="roomList"></div>
+
+    <div id="pwBox" class="hidden">
+      <div class="net-label" id="pwLabel">Sala con contraseña</div>
+      <input id="pwInput" class="txt-in" maxlength="20" placeholder="Contraseña" autocomplete="off" spellcheck="false">
+      <button id="pwGo" class="primary">🔓 Entrar</button>
+      <button id="pwCancel" class="cancel">Volver a la lista</button>
+    </div>
+
+    <div id="lobbyMain">
+      <div class="net-label">Entrar con código</div>
+      <div class="join-row">
+        <input id="lobbyCode" class="code-in" maxlength="8" placeholder="CÓDIGO" autocomplete="off" autocapitalize="characters" spellcheck="false">
+        <button id="lobbyCodeGo">Unirse</button>
+      </div>
+      <button id="lobbyCreate" class="primary">➕ Crear sala</button>
+      <button class="cancel" id="lobbyBack">Volver</button>
+    </div>
+  </div>
+</div>
+
+<!-- ============ CREAR SALA ============ -->
+<div id="createModal" class="modal hidden">
+  <div class="modal-box">
+    <h2>➕ Crear sala</h2>
+    <div class="net-label label-left">Nombre de la sala</div>
+    <input id="roomNameIn" class="txt-in" maxlength="20" placeholder="Ej: La sala de Juan" autocomplete="off">
+    <div class="net-label label-left">Contraseña (opcional)</div>
+    <input id="roomPwIn" class="txt-in" maxlength="20" placeholder="Vacía = sala abierta" autocomplete="off" spellcheck="false">
+    <button id="createGo" class="primary">🚀 Crear sala</button>
+    <button class="cancel" id="createCancel">Cancelar</button>
   </div>
 </div>
 
@@ -1096,7 +1160,7 @@ const game = {
 /* =========================================================
    ONLINE (WebRTC con PeerJS · sin servidor propio)
    ========================================================= */
-const VERSION = 'v7';
+const VERSION = 'v8';
 document.getElementById('ver').textContent = 'versión ' + VERSION;
 function toast(text){
   let t = document.getElementById('toast');
@@ -1155,6 +1219,8 @@ const net = {
 
   cleanup(){
     this.tok = (this.tok || 0) + 1;
+    try { directory.unregister(); } catch(_){}
+    clearTimeout(this._authT);
     const c = this.conn, p = this.peer;
     this.conn = null; this.peer = null;
     try { c && c.close(); } catch(_){}
@@ -1162,9 +1228,11 @@ const net = {
   },
 
   /* ----- Crear sala (anfitrión) ----- */
-  host(mode){
+  host(mode, opts){
     this.cleanup();
-    this.isHost = true; this.mode = mode;
+    this.isHost = true; this.mode = mode; this.authed = false;
+    this.roomName = (opts && opts.name) || '';
+    this.roomPw   = (opts && opts.pw)   || '';
     this.showModal('host');
     this.$('roomCode').textContent = '·····';
     this.status('Cargando…');
@@ -1190,7 +1258,12 @@ const net = {
         if (peer !== this.peer) return;
         this.code = code;
         this.$('roomCode').textContent = code;
-        this.status('⏳ Esperando a tu rival…<br><small>Pásale el código o el enlace.</small>');
+        this.$('netTitle').textContent = '🌐 ' + (this.roomName || 'Sala') + (this.roomPw ? ' 🔒' : '');
+        this.status('⏳ Esperando a tu rival…<br><small>Pásale el código o que te busque en la lista de salas.</small>');
+        directory.register({
+          code, name: this.roomName || 'Sala sin nombre', mode,
+          locked: !!this.roomPw, busy: false, created: Date.now()
+        });
       });
       peer.on('connection', c => {
         if (peer !== this.peer) return;
@@ -1207,10 +1280,11 @@ const net = {
   },
 
   /* ----- Unirse (invitado) ----- */
-  join(raw){
+  join(raw, pw){
     this.cleanup();
     this.isHost = false;
-    this.showModal('join');
+    this.joinPw = pw || '';
+    this.showModal('wait');
     this.status('Cargando…');
     const tok = this.tok;
     this.loadPeer().then(() => { if (tok === this.tok) this._join(raw); })
@@ -1221,10 +1295,11 @@ const net = {
     if (code.length < 4){ this.status('Escribe el código de la sala.'); return; }
     this.cleanup();
     this.isHost = false;
-    this.showModal('join');
+    this.showModal('wait');
     if (typeof Peer === 'undefined'){
       this.status('❌ No se pudo cargar PeerJS (¿sin internet?).'); return;
     }
+    this.joinCode = code;
     this.status('Conectando…');
     const peer = new Peer();
     this.peer = peer;
@@ -1249,16 +1324,20 @@ const net = {
     const onOpen = () => {
       if (c !== this.conn) return;
       if (this.isHost){
-        this.status('✅ ¡Rival conectado!');
-        this.guestV = null;
-        this.startRound();
-        // Si el rival no avisa su versión, tiene una copia antigua del juego
-        setTimeout(() => {
-          if (c === this.conn && !this.guestV)
-            toast('⚠️ Tu rival tiene una versión ANTIGUA del juego. Que abra de nuevo el archivo actual (' + VERSION + ') para ver lo mismo que tú.');
-        }, 3000);
+        // Esperamos el 'hi' del invitado (trae su versión y la contraseña)
+        this.authed = false; this.guestV = null;
+        this.status('🔎 Alguien se está conectando…');
+        clearTimeout(this._authT);
+        this._authT = setTimeout(() => {
+          if (c === this.conn && !this.authed){
+            this.conn = null;
+            try { c.close(); } catch(_){}
+            toast('⚠️ Alguien intentó entrar con una versión ANTIGUA del juego. Que abra el archivo actual (' + VERSION + ').');
+            this.status('⏳ Esperando a tu rival…<br><small>Pásale el código o que te busque en la lista de salas.</small>');
+          }
+        }, 6000);
       } else {
-        this.send({ t:'hi', v:VERSION });
+        this.send({ t:'hi', v:VERSION, pw:this.joinPw || '' });
         this.status('✅ Conectado. Esperando a que el anfitrión inicie…');
       }
     };
@@ -1281,10 +1360,30 @@ const net = {
   onData(m){
     if (!m || !m.t) return;
     switch (m.t){
-      case 'hi':
+      case 'hi': {
+        if (!this.isHost || this.authed) break;
+        if (this.roomPw && String(m.pw || '') !== this.roomPw){
+          const bad = this.conn; this.conn = null;
+          clearTimeout(this._authT);
+          try { bad.send({ t:'denied' }); } catch(_){}
+          setTimeout(() => { try { bad.close(); } catch(_){} }, 500);
+          this.status('🔒 Alguien probó una contraseña incorrecta.<br><small>Sigues esperando a tu rival…</small>');
+          break;
+        }
+        this.authed = true; clearTimeout(this._authT);
+        directory.unregister();                      // sala llena: sale de la lista
         this.guestV = m.v;
         if (m.v !== VERSION) toast('⚠️ Tu rival tiene otra versión del juego (' + m.v + ' vs ' + VERSION + '). Usen el mismo archivo en los dos.');
+        this.status('✅ ¡Rival conectado!');
+        this.startRound();
         break;
+      }
+      case 'denied': {
+        const code = this.joinCode;
+        this.cleanup(); this.hideModal();
+        lobbyUI.askPw(code, '🔒 Contraseña incorrecta.');
+        break;
+      }
       case 'start':
         if (m.v !== VERSION) toast('⚠️ El anfitrión tiene otra versión del juego (' + (m.v || 'antigua') + ' vs ' + VERSION + '). Usen el mismo archivo en los dos.');
         this.hideModal();
@@ -1342,6 +1441,11 @@ const net = {
   onClose(c){
     if (c !== this.conn) return;
     this.conn = null;
+    if (this.isHost && !this.authed && !game.online){
+      clearTimeout(this._authT);
+      this.status('⏳ Esperando a tu rival…<br><small>Pásale el código o que te busque en la lista de salas.</small>');
+      return;
+    }
     if (game.online && (game.state === 'playing' || game.state === 'ending')){
       game.state = 'over';
       this.$('againBtn').style.display = 'none';
@@ -1359,22 +1463,309 @@ function leaveOnline(){
   if (game.online){ net.cleanup(); game.online = false; }
 }
 
+/* =========================================================
+   DIRECTORIO DE SALAS (sin servidor propio)
+   Uno de los jugadores conectados hace de "tablón de anuncios":
+   reclama un ID fijo de PeerJS. Los demás se conectan a él para
+   publicar su sala o pedir la lista. Si ese jugador se va, otro
+   toma su lugar solo y las salas se vuelven a publicar.
+   ========================================================= */
+const directory = {
+  HUB_ID: 'blockblast-lobby-v1',
+  MODES: ['pvp', 'time', 'death'],
+  peer: null, isHub: false, ready: false, starting: false,
+  hubConn: null, rooms: new Map(),      // solo el hub: code -> {room, ts, conn, local}
+  myRoom: null, hb: null, retryT: null, _pending: null,
+
+  start(){
+    if (this.peer || this.starting) return;
+    this.starting = true;
+    net.loadPeer().then(() => { this.starting = false; this._become(); })
+      .catch(() => { this.starting = false; });
+  },
+
+  _kill(){
+    clearTimeout(this.retryT);
+    this.ready = false; this.isHub = false; this.hubConn = null; this._pending = null;
+    this.rooms.clear();
+    const p = this.peer; this.peer = null;
+    try { p && p.destroy(); } catch(_){}
+  },
+  _retry(ms){
+    this._kill();
+    this.retryT = setTimeout(() => this._become(), ms);
+  },
+
+  /* Intenta ser el hub; si el ID ya está ocupado, se conecta a él */
+  _become(){
+    if (this.peer || typeof Peer === 'undefined') return;
+    const p = new Peer(this.HUB_ID);
+    this.peer = p;
+    p.on('open', () => {
+      if (p !== this.peer) return;
+      this.isHub = true; this.ready = true;
+      this._flush();
+    });
+    p.on('connection', c => { if (p === this.peer) this._serve(c); });
+    p.on('disconnected', () => { if (p === this.peer) this._retry(2000); });
+    p.on('error', err => {
+      if (p !== this.peer) return;
+      if (err.type === 'unavailable-id') this._asClient();
+      else this._retry(4000);
+    });
+  },
+
+  _asClient(){
+    this._kill();
+    const p = new Peer();
+    this.peer = p;
+    p.on('open', () => {
+      if (p !== this.peer) return;
+      const c = p.connect(this.HUB_ID, { reliable:true });
+      this.hubConn = c;
+      c.on('open',  () => { if (c === this.hubConn){ this.ready = true; this._flush(); } });
+      c.on('data',  m  => { if (c === this.hubConn) this._onHubMsg(m); });
+      c.on('close', () => { if (c === this.hubConn) this._retry(800 + Math.random() * 2000); });
+      c.on('error', () => { if (c === this.hubConn) this._retry(2500); });
+    });
+    p.on('error', () => { if (p === this.peer) this._retry(3000 + Math.random() * 2000); });
+    setTimeout(() => { if (p === this.peer && !this.ready) this._retry(2000); }, 12000);
+  },
+
+  /* ---- Lado hub: atiende a los demás ---- */
+  _clean(r){
+    if (!r || typeof r !== 'object') return null;
+    const code = String(r.code || '').toUpperCase().replace(/[^A-Z0-9]/g, '');
+    if (code.length < 4 || code.length > 8) return null;
+    return {
+      code,
+      name: String(r.name || 'Sala').slice(0, 20),
+      mode: this.MODES.includes(r.mode) ? r.mode : 'pvp',
+      locked: !!r.locked, busy: !!r.busy,
+      created: Number(r.created) || 0
+    };
+  },
+  _serve(c){
+    c.on('data', m => {
+      if (!m) return;
+      if (m.t === 'list'){
+        try { c.send({ t:'rooms', rooms:this._publicRooms() }); } catch(_){}
+      } else if (m.t === 'reg'){
+        const r = this._clean(m.room);
+        if (r) this.rooms.set(r.code, { room:r, ts:Date.now(), conn:c });
+      } else if (m.t === 'unreg'){
+        const e = this.rooms.get(String(m.code));
+        if (e && e.conn === c) this.rooms.delete(String(m.code));
+      }
+    });
+    c.on('close', () => {
+      for (const [k, e] of this.rooms) if (e.conn === c) this.rooms.delete(k);
+    });
+  },
+  _publicRooms(){
+    const now = Date.now(), out = [];
+    for (const [k, e] of this.rooms){
+      if (!e.local && now - e.ts > 30000){ this.rooms.delete(k); continue; }
+      if (!e.room.busy) out.push(e.room);
+    }
+    return out;
+  },
+
+  /* ---- Lado cliente ---- */
+  _onHubMsg(m){
+    if (m && m.t === 'rooms' && Array.isArray(m.rooms) && this._pending){
+      const f = this._pending; this._pending = null;
+      f(m.rooms.map(r => this._clean(r)).filter(Boolean));
+    }
+  },
+
+  /* Devuelve una lista de salas, o null si todavía no hay conexión con el lobby */
+  list(){
+    return new Promise(res => {
+      this.start();
+      if (this.isHub && this.ready) return res(this._publicRooms());
+      if (this.ready && this.hubConn && this.hubConn.open){
+        const t = setTimeout(() => { this._pending = null; res(null); }, 4000);
+        this._pending = r => { clearTimeout(t); res(r); };
+        try { this.hubConn.send({ t:'list' }); } catch(_){ clearTimeout(t); this._pending = null; res(null); }
+      } else res(null);
+    });
+  },
+
+  /* Publicar mi sala (se renueva cada 8 s para que no caduque) */
+  register(room){
+    this.myRoom = room;
+    this.start();
+    clearInterval(this.hb);
+    this.hb = setInterval(() => this._flush(), 8000);
+    this._flush();
+  },
+  unregister(){
+    clearInterval(this.hb); this.hb = null;
+    const r = this.myRoom; this.myRoom = null;
+    if (!r) return;
+    if (this.isHub) this.rooms.delete(r.code);
+    else if (this.hubConn && this.hubConn.open){
+      try { this.hubConn.send({ t:'unreg', code:r.code }); } catch(_){}
+    }
+  },
+  _flush(){
+    const r = this.myRoom;
+    if (!r || !this.ready) return;
+    if (this.isHub) this.rooms.set(r.code, { room:r, ts:Date.now(), conn:null, local:true });
+    else if (this.hubConn && this.hubConn.open){
+      try { this.hubConn.send({ t:'reg', room:r }); } catch(_){}
+    }
+  }
+};
+
+/* =========================================================
+   LOBBY (pantalla con la lista de salas)
+   ========================================================= */
+const lobbyUI = {
+  ctx: null,            // { mode } mientras el jugador está en el flujo del lobby
+  MANY: 8,              // más salas que esto -> se pide el código en vez de listar
+  rooms: [], timer: null,
+  MODES: { pvp:'⚔️ PvP', time:'⏱️ PvP Contrarreloj', death:'💀 Mata-Mata' },
+  $(id){ return document.getElementById(id); },
+
+  _view(v){
+    const pw = v === 'pw';
+    this.$('pwBox').classList.toggle('hidden', !pw);
+    this.$('lobbyMain').classList.toggle('hidden', pw);
+    this.$('roomList').classList.toggle('hidden', pw);
+    this.$('lobbyInfo').classList.toggle('hidden', pw);
+  },
+
+  open(mode){
+    this.ctx = { mode: mode || null };
+    this.$('createModal').classList.add('hidden');
+    this.$('lobbyModal').classList.remove('hidden');
+    this.$('lobbyTitle').textContent = mode ? '🌐 Salas · ' + this.MODES[mode] : '🌐 Salas online';
+    this.$('lobbyCreate').classList.toggle('hidden', !mode);
+    this.$('lobbyCode').value = '';
+    this._view('list');
+    this.rooms = [];
+    this.render(null);
+    directory.start();
+    this.poll();
+    clearInterval(this.timer);
+    this.timer = setInterval(() => this.poll(), 3000);
+  },
+  close(){
+    clearInterval(this.timer); this.timer = null;
+    this.$('lobbyModal').classList.add('hidden');
+  },
+  leave(){ this.close(); this.ctx = null; },
+
+  poll(){
+    directory.list().then(r => {
+      if (this.$('lobbyModal').classList.contains('hidden')) return;
+      if (r) this.rooms = r;
+      this.render(r);
+    });
+  },
+
+  render(r){
+    const info = this.$('lobbyInfo'), list = this.$('roomList');
+    list.textContent = '';
+    if (r === null){ info.textContent = '⏳ Conectando con el lobby… (mientras tanto puedes entrar con código)'; return; }
+    const rooms = r.slice().sort((a, b) => (b.created || 0) - (a.created || 0));
+    if (!rooms.length){
+      info.textContent = 'No hay salas abiertas ahora mismo. ' +
+        (this.ctx && this.ctx.mode ? '¡Crea una!' : 'Entra a un modo de juego para crear una.');
+      return;
+    }
+    if (rooms.length > this.MANY){
+      info.textContent = 'Hay ' + rooms.length + ' salas abiertas. Escribe el código de la sala de tu amigo.';
+      return;
+    }
+    info.textContent = rooms.length + (rooms.length === 1 ? ' sala abierta' : ' salas abiertas') + ' · toca la de tu amigo';
+    for (const room of rooms){
+      const el = document.createElement('div');
+      el.className = 'room-item';
+      const left = document.createElement('div');
+      left.className = 'rn';
+      left.textContent = (room.locked ? '🔒 ' : '') + room.name;
+      const sm = document.createElement('span');
+      sm.className = 'rm'; sm.textContent = this.MODES[room.mode] || room.mode;
+      left.appendChild(sm);
+      const rc = document.createElement('div');
+      rc.className = 'rc'; rc.textContent = room.code;
+      el.append(left, rc);
+      el.addEventListener('click', () => this.pick(room));
+      list.appendChild(el);
+    }
+  },
+
+  pick(room){
+    if (room.locked) this.askPw(room.code, '');
+    else this.go(room.code, '');
+  },
+  goCode(){
+    const code = this.$('lobbyCode').value.toUpperCase().replace(/[^A-Z0-9]/g, '');
+    if (code.length < 4){ this.$('lobbyInfo').textContent = 'Escribe el código completo de la sala.'; return; }
+    const room = this.rooms.find(r => r.code === code);
+    if (room && room.locked) this.askPw(code, '');
+    else this.go(code, '');
+  },
+  go(code, pw){
+    this.close();                 // deja this.ctx para poder volver desde el modal de conexión
+    net.join(code, pw);
+  },
+
+  askPw(code, msg){
+    if (this.$('lobbyModal').classList.contains('hidden')) this.open(this.ctx ? this.ctx.mode : null);
+    this.pendingCode = code;
+    this._view('pw');
+    this.$('pwLabel').textContent = (msg ? msg + ' ' : '') + 'Sala ' + code + ' · escribe la contraseña';
+    this.$('pwInput').value = '';
+    setTimeout(() => this.$('pwInput').focus(), 50);
+  },
+  submitPw(){
+    const pw = this.$('pwInput').value;
+    if (!pw){ this.$('pwLabel').textContent = 'Escribe la contraseña de la sala ' + this.pendingCode; return; }
+    this.go(this.pendingCode, pw);
+  },
+
+  openCreate(){
+    this.close();
+    this.$('createModal').classList.remove('hidden');
+    this.$('roomNameIn').value = ''; this.$('roomPwIn').value = '';
+    setTimeout(() => this.$('roomNameIn').focus(), 50);
+  },
+  doCreate(){
+    const name = this.$('roomNameIn').value.trim().slice(0, 20) || 'Sala sin nombre';
+    const pw   = this.$('roomPwIn').value.trim().slice(0, 20);
+    this.$('createModal').classList.add('hidden');
+    net.host(this.ctx.mode, { name, pw });
+  },
+  cancelCreate(){
+    this.$('createModal').classList.add('hidden');
+    this.open(this.ctx ? this.ctx.mode : null);
+  }
+};
+
 try {
 /* Botones del lobby online */
-document.getElementById('joinCard').addEventListener('click', () => {
-  net.showModal('join');
-  net.status('Escribe el código que te pasó tu amigo.');
-  setTimeout(() => document.getElementById('joinInput').focus(), 50);
-});
-document.getElementById('joinGo').addEventListener('click', () => {
-  net.join(document.getElementById('joinInput').value);
-});
-document.getElementById('joinInput').addEventListener('keydown', e => {
-  if (e.key === 'Enter') net.join(e.target.value);
-});
+document.getElementById('joinCard').addEventListener('click', () => lobbyUI.open(null));
 document.getElementById('netCancel').addEventListener('click', () => {
   net.cleanup(); net.hideModal();
+  if (lobbyUI.ctx) lobbyUI.open(lobbyUI.ctx.mode);      // vuelve a la lista de salas
 });
+
+/* Lobby de salas */
+document.getElementById('lobbyCodeGo').addEventListener('click', () => lobbyUI.goCode());
+document.getElementById('lobbyCode').addEventListener('keydown', e => { if (e.key === 'Enter') lobbyUI.goCode(); });
+document.getElementById('lobbyCreate').addEventListener('click', () => lobbyUI.openCreate());
+document.getElementById('lobbyBack').addEventListener('click', () => lobbyUI.leave());
+document.getElementById('pwGo').addEventListener('click', () => lobbyUI.submitPw());
+document.getElementById('pwInput').addEventListener('keydown', e => { if (e.key === 'Enter') lobbyUI.submitPw(); });
+document.getElementById('pwCancel').addEventListener('click', () => lobbyUI._view('list'));
+document.getElementById('createGo').addEventListener('click', () => lobbyUI.doCreate());
+document.getElementById('createCancel').addEventListener('click', () => lobbyUI.cancelCreate());
+document.getElementById('roomNameIn').addEventListener('keydown', e => { if (e.key === 'Enter') document.getElementById('roomPwIn').focus(); });
+document.getElementById('roomPwIn').addEventListener('keydown', e => { if (e.key === 'Enter') lobbyUI.doCreate(); });
 document.getElementById('copyBtn').addEventListener('click', async () => {
   const code = net.code || '';
   const text = location.protocol.startsWith('http')
@@ -1441,7 +1832,7 @@ document.querySelectorAll('#oppModal [data-opp]').forEach(btn => {
   btn.addEventListener('click', () => {
     document.getElementById('oppModal').classList.add('hidden');
     if (pendingMode){
-      if (btn.dataset.opp === 'online') net.host(pendingMode);
+      if (btn.dataset.opp === 'online') lobbyUI.open(pendingMode);
       else game.start(pendingMode, btn.dataset.opp);
     }
     pendingMode = null;
