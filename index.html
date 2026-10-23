@@ -108,6 +108,15 @@
     background:linear-gradient(180deg,#fff,#8fb6ff);-webkit-background-clip:text;background-clip:text;color:transparent}
   #resultSub{color:#9aa8d4;font-size:14px;margin-bottom:18px;line-height:1.5}
 
+  /* ---------- CONTRARRELOJ ---------- */
+  #timer{
+    margin-left:auto;font-size:20px;font-weight:900;font-variant-numeric:tabular-nums;color:#ffd43b;
+    padding:2px 12px;border-radius:10px;background:rgba(255,255,255,.07);letter-spacing:1px;
+  }
+  #timer.low{color:#ff6b8b;animation:tpulse .8s infinite}
+  @keyframes tpulse{50%{opacity:.45}}
+  .mode-card[data-mode="time"] .ico{filter:drop-shadow(0 0 8px #ffd43b)}
+
   /* ---------- ONLINE ---------- */
   #rivalBar{
     width:100%;max-width:400px;display:flex;align-items:center;gap:14px;
@@ -155,6 +164,7 @@
 <div id="menu">
   <h1>BLOCK BLAST</h1>
   <div class="sub">Multijugador</div>
+  <div id="ver" style="margin:-18px 0 18px;font-size:11px;color:#5d6a99;letter-spacing:1px"></div>
   <div class="modes">
     <button class="mode-card" data-mode="classic">
       <span class="ico">🎯</span>
@@ -165,6 +175,11 @@
       <span class="ico">⚔️</span>
       <span><span class="t">Modo PvP</span>
       <span class="d">Pantalla dividida. El que se queda sin movimientos pierde… y hace ganar al otro.</span></span>
+    </button>
+    <button class="mode-card" data-mode="time">
+      <span class="ico">⏱️</span>
+      <span><span class="t">PvP Contrarreloj</span>
+      <span class="d">5 minutos: gana quien haga más puntos. Si te quedas sin espacio, tu tablero se reinicia y pierdes 100 puntos.</span></span>
     </button>
     <button class="mode-card" data-mode="death">
       <span class="ico">💀</span>
@@ -213,6 +228,7 @@
   <div id="topbar">
     <button id="backBtn">←</button>
     <div id="modeLabel">CLÁSICO</div>
+    <div id="timer" class="hidden">5:00</div>
   </div>
   <div id="rivalBar" class="hidden">
     <div id="rivalMini"></div>
@@ -389,6 +405,7 @@ class Board {
     this.dead   = false;
     this.drag   = null;
     this.flashes= [];
+    this.fx     = null;
     this.aiTimer= 0.7 + Math.random()*0.7;
   }
 
@@ -534,7 +551,11 @@ class Board {
 
     if (this.hand.every(p => !p)) this.hand = [makePiece(this.rand), makePiece(this.rand), makePiece(this.rand)];
 
-    const dead = !this.hasMoves();
+    let dead = !this.hasMoves();
+    if (dead && game.mode === 'time'){      // Contrarreloj: no mueres, te reinicias y pierdes 100
+      this.doReset();
+      dead = false;
+    }
     if (dead){
       this.dead = true;
       this.wrap.classList.add('dead');
@@ -542,6 +563,19 @@ class Board {
     game.onLocalMove(this, flStart);     // online: manda el estado al rival
     if (dead) game.onBoardDead(this);
     return true;
+  }
+
+  /* ---------- CONTRARRELOJ: reinicio ---------- */
+  doReset(){
+    this.grid  = Array.from({length:GRID_N}, () => Array(GRID_N).fill(null));
+    this.hand  = [makePiece(this.rand), makePiece(this.rand), makePiece(this.rand)];
+    this.score -= 100;
+    this.combo = 0;
+    this.dead  = false;
+    this.drag  = null;
+    this.wrap.classList.remove('dead');
+    this.flashes.push({ x:PAD, y:PAD, w:GRID_PX, h:GRID_PX, life:1 });
+    this.fx = { text:'SIN ESPACIO · −100', life:1.8 };
   }
 
   /* ---------- ONLINE: estado serializable ---------- */
@@ -610,6 +644,7 @@ class Board {
       }
     }
     if (best) this.placeAt(best.i, best.r, best.c);
+    else if (game.mode === 'time') this.doReset();
     else { this.dead = true; this.wrap.classList.add('dead'); game.onBoardDead(this); }
   }
 
@@ -665,6 +700,7 @@ class Board {
   update(dt){
     for (const f of this.flashes) f.life -= dt * 3.2;
     if (this.flashes.length) this.flashes = this.flashes.filter(f => f.life > 0);
+    if (this.fx){ this.fx.life -= dt; if (this.fx.life <= 0) this.fx = null; }
 
     if (this.isAI && !this.dead && game.state === 'playing'){
       this.aiTimer -= dt;
@@ -789,6 +825,19 @@ class Board {
       ctx.globalAlpha = 1;
     }
 
+    /* aviso de reinicio (Contrarreloj) */
+    if (this.fx){
+      ctx.save();
+      ctx.globalAlpha = Math.min(1, this.fx.life);
+      ctx.font = '900 24px system-ui, sans-serif';
+      ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+      ctx.lineWidth = 5; ctx.strokeStyle = 'rgba(0,0,0,.75)';
+      ctx.strokeText(this.fx.text, W/2, PAD + GRID_PX/2);
+      ctx.fillStyle = '#ff6b8b';
+      ctx.fillText(this.fx.text, W/2, PAD + GRID_PX/2);
+      ctx.restore();
+    }
+
     this.syncHUD();
   }
 
@@ -807,6 +856,8 @@ const game = {
 
   online: false,
   rivalMode: false,
+  timeLimit: 300,      // segundos (Contrarreloj)
+  endAt: 0,
 
   start(mode, opponent, opts){
     opts = opts || {};
@@ -815,6 +866,12 @@ const game = {
     this.online   = opponent === 'online';
     this.rivalMode = false;
     net.decided = false; net.myRematch = false; net.theirRematch = false;
+    const tm = document.getElementById('timer');
+    if (mode === 'time'){
+      this.endAt = Date.now() + this.timeLimit * 1000;
+      tm.classList.remove('hidden', 'low');
+      tm.textContent = this.fmtTime(this.timeLimit);
+    } else tm.classList.add('hidden');
     const ab = document.getElementById('againBtn');
     ab.disabled = false; ab.style.display = ''; ab.textContent = '🔁 Jugar otra vez';
     this.state    = 'playing';
@@ -830,6 +887,7 @@ const game = {
     const labelEl = document.getElementById('modeLabel');
     const names = {
       classic: '🎯 CLÁSICO',
+      time:    '⏱️ CONTRARRELOJ' + (opponent === 'cpu' ? ' · VS CPU' : opponent === 'online' ? ' · ONLINE' : ' · 2 JUGADORES'),
       pvp:     '⚔️ PVP' + (opponent === 'cpu' ? ' · VS CPU' : opponent === 'online' ? ' · ONLINE' : ' · 2 JUGADORES'),
       death:   '💀 MATA-MATA' + (opponent === 'cpu' ? ' · VS CPU' : opponent === 'online' ? ' · ONLINE' : ' · 2 JUGADORES')
     };
@@ -954,6 +1012,73 @@ const game = {
 
   update(dt){
     for (const b of this.boards) b.update(dt);
+    if (this.mode === 'time') this.tickTimer();
+  },
+
+  /* ---------- CONTRARRELOJ ---------- */
+  fmtTime(s){
+    s = Math.max(0, Math.ceil(s));
+    return Math.floor(s/60) + ':' + String(s % 60).padStart(2, '0');
+  },
+
+  tickTimer(){
+    const left = Math.max(0, (this.endAt - Date.now()) / 1000);
+    const tm = document.getElementById('timer');
+    const txt = this.fmtTime(left);
+    if (tm.textContent !== txt) tm.textContent = txt;
+    tm.classList.toggle('low', left <= 30);
+    if (left <= 0) this.timeUp();
+  },
+
+  waitingResult(){
+    document.getElementById('againBtn').style.display = 'none';
+    showResult('⏱️ ¡Tiempo!', 'Calculando el resultado…');
+  },
+
+  timeUp(){
+    if (this.state !== 'playing') return;
+    if (!this.online){
+      this.state = 'over';
+      const a = this.boards[0], b = this.boards[1];
+      let title;
+      if (a.score === b.score) title = '🤝 ¡Empate!';
+      else title = `🏆 ¡Gana ${(a.score > b.score ? a : b).label}!`;
+      showResult(title, `⏱️ Se acabó el tiempo.<br>${a.label}: <b>${a.score}</b> pts · ${b.label}: <b>${b.score}</b> pts`);
+      return;
+    }
+    // Online: el anfitrión manda el reloj; el invitado responde con su puntuación final
+    this.state = 'ending';
+    this.waitingResult();
+    if (net.isHost){
+      net.send({ t:'tend' });
+      setTimeout(() => {                       // por si el rival no responde
+        if (game.state === 'ending') game.hostFinish(game.boards[1].score);
+      }, 4000);
+    }
+  },
+
+  onTend(){                                    // invitado: el anfitrión dijo "tiempo"
+    if (this.mode !== 'time' || (this.state !== 'playing' && this.state !== 'ending')) return;
+    if (this.state === 'playing'){ this.state = 'ending'; this.waitingResult(); }
+    net.send({ t:'final', s: this.boards[0].score });
+    setTimeout(() => {                         // por si nunca llega el resultado
+      if (game.state === 'ending') game.finishTime(game.boards[0].score, game.boards[1].score);
+    }, 8000);
+  },
+
+  hostFinish(guestScore){                      // anfitrión: ya tiene ambos puntajes
+    if (this.state !== 'ending') return;
+    const hs = this.boards[0].score;
+    net.send({ t:'result', hs, gs: guestScore });
+    this.finishTime(hs, guestScore);
+  },
+
+  finishTime(mine, rival){
+    if (this.state === 'over') return;
+    this.state = 'over';
+    document.getElementById('againBtn').style.display = '';
+    const title = mine === rival ? '🤝 ¡Empate!' : (mine > rival ? '🏆 ¡Ganaste!' : '😵 ¡Perdiste!');
+    showResult(title, `⏱️ Se acabó el tiempo.<br>Tú: <b>${mine}</b> pts · Rival: <b>${rival}</b> pts`);
   },
 
   draw(){
@@ -971,6 +1096,19 @@ const game = {
 /* =========================================================
    ONLINE (WebRTC con PeerJS · sin servidor propio)
    ========================================================= */
+const VERSION = 'v7';
+document.getElementById('ver').textContent = 'versión ' + VERSION;
+function toast(text){
+  let t = document.getElementById('toast');
+  if (!t){
+    t = document.createElement('div'); t.id = 'toast';
+    t.style.cssText = 'position:fixed;left:10px;right:10px;top:10px;z-index:99;background:#7a5a10;color:#fff;padding:10px 12px;border-radius:12px;font:13px/1.4 system-ui;text-align:center';
+    document.body.appendChild(t);
+  }
+  t.textContent = text; t.style.display = 'block';
+  clearTimeout(t._h); t._h = setTimeout(() => t.style.display = 'none', 9000);
+}
+
 const net = {
   PREFIX: 'blockblast-',
   peer: null, conn: null,
@@ -1112,8 +1250,15 @@ const net = {
       if (c !== this.conn) return;
       if (this.isHost){
         this.status('✅ ¡Rival conectado!');
+        this.guestV = null;
         this.startRound();
+        // Si el rival no avisa su versión, tiene una copia antigua del juego
+        setTimeout(() => {
+          if (c === this.conn && !this.guestV)
+            toast('⚠️ Tu rival tiene una versión ANTIGUA del juego. Que abra de nuevo el archivo actual (' + VERSION + ') para ver lo mismo que tú.');
+        }, 3000);
       } else {
+        this.send({ t:'hi', v:VERSION });
         this.status('✅ Conectado. Esperando a que el anfitrión inicie…');
       }
     };
@@ -1128,7 +1273,7 @@ const net = {
   /* Solo el anfitrión: reparte semilla y arranca los dos a la vez */
   startRound(){
     const seed = (Math.random() * 2147483647) | 0;
-    this.send({ t:'start', mode:this.mode, seed });
+    this.send({ t:'start', mode:this.mode, seed, v:VERSION });
     this.hideModal();
     game.start(this.mode, 'online', { seed });
   },
@@ -1136,7 +1281,12 @@ const net = {
   onData(m){
     if (!m || !m.t) return;
     switch (m.t){
+      case 'hi':
+        this.guestV = m.v;
+        if (m.v !== VERSION) toast('⚠️ Tu rival tiene otra versión del juego (' + m.v + ' vs ' + VERSION + '). Usen el mismo archivo en los dos.');
+        break;
       case 'start':
+        if (m.v !== VERSION) toast('⚠️ El anfitrión tiene otra versión del juego (' + (m.v || 'antigua') + ' vs ' + VERSION + '). Usen el mismo archivo en los dos.');
         this.hideModal();
         game.start(m.mode, 'online', { seed: m.seed });
         break;
@@ -1145,6 +1295,15 @@ const net = {
         break;
       case 'dead':
         if (this.isHost) this.decide('guest');
+        break;
+      case 'tend':
+        game.onTend();
+        break;
+      case 'final':
+        if (this.isHost) game.hostFinish(m.s);
+        break;
+      case 'result':
+        game.finishTime(m.gs, m.hs);
         break;
       case 'over':
         game.finishOnline(m.deadSide);
@@ -1183,7 +1342,7 @@ const net = {
   onClose(c){
     if (c !== this.conn) return;
     this.conn = null;
-    if (game.online && game.state === 'playing'){
+    if (game.online && (game.state === 'playing' || game.state === 'ending')){
       game.state = 'over';
       this.$('againBtn').style.display = 'none';
       showResult('🔌 Rival desconectado', 'Se fue de la partida. ¡Ganas por abandono!');
@@ -1253,7 +1412,7 @@ function loop(ts){
   const dt = Math.min(60, ts - game.lastTs) / 1000;
   game.lastTs = ts;
 
-  if (game.state === 'playing' || game.state === 'over'){
+  if (game.state === 'playing' || game.state === 'over' || game.state === 'ending'){
     if (game.state === 'playing') game.update(dt);
     game.draw();
   }
@@ -1326,4 +1485,4 @@ window.addEventListener('resize', () => {
 })();
 </script>
 </body>
-</html>
+ </html>
