@@ -4,7 +4,6 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
 <title>Block Blast · Multijugador</title>
-<script src="https://cdn.jsdelivr.net/npm/peerjs@1.5.4/dist/peerjs.min.js"></script>
 <style>
   *{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
   :root{
@@ -109,24 +108,6 @@
     background:linear-gradient(180deg,#fff,#8fb6ff);-webkit-background-clip:text;background-clip:text;color:transparent}
   #resultSub{color:#9aa8d4;font-size:14px;margin-bottom:18px;line-height:1.5}
 
-  /* ---------- ONLINE ---------- */
-  .mode-card[data-online] .ico{filter:drop-shadow(0 0 8px #38d9a9)}
-  .net-label{font-size:12px;color:#8d9bc9;letter-spacing:2px;text-transform:uppercase;margin-bottom:6px}
-  .room-code{
-    font-size:38px;font-weight:900;letter-spacing:8px;margin:0 0 14px;padding:10px 0 10px 8px;
-    border-radius:14px;background:rgba(255,255,255,.06);border:1px dashed rgba(255,255,255,.22);
-    color:#ffd43b;-webkit-user-select:text;user-select:text;
-  }
-  .modal-box input.code-in{
-    width:100%;margin-bottom:10px;padding:13px;border-radius:14px;text-align:center;
-    border:1px solid rgba(255,255,255,.18);background:rgba(255,255,255,.07);color:#fff;
-    font-size:24px;font-weight:800;letter-spacing:6px;text-transform:uppercase;font-family:inherit;outline:none;
-    -webkit-user-select:text;user-select:text;
-  }
-  .modal-box input.code-in:focus{border-color:rgba(120,170,255,.7)}
-  .net-status{min-height:20px;margin:2px 0 14px;font-size:14px;color:#b8c4ee;line-height:1.4}
-  .modal-box button:disabled{opacity:.55;cursor:default}
-
   @media (max-width:520px){
     #menu{padding-top:4px}
     .mode-card{padding:12px}
@@ -155,11 +136,6 @@
       <span><span class="t">Modo Mata-Mata</span>
       <span class="d">Todo al revés: el que se queda sin movimientos MÁS RÁPIDO gana la partida.</span></span>
     </button>
-    <button class="mode-card" id="joinCard" data-online="1">
-      <span class="ico">🌐</span>
-      <span><span class="t">Unirse a sala online</span>
-      <span class="d">¿Tu amigo creó una sala? Escribe su código y juega desde tu propio dispositivo.</span></span>
-    </button>
   </div>
 </div>
 
@@ -168,27 +144,8 @@
   <div class="modal-box">
     <h2>¿Contra quién juegas?</h2>
     <button data-opp="cpu">🤖 Contra la máquina</button>
-    <button data-opp="online">🌐 Online (cada uno en su dispositivo)</button>
     <button data-opp="human">👥 2 jugadores (misma pantalla)</button>
     <button class="cancel" id="cancelOpp">Cancelar</button>
-  </div>
-</div>
-
-<!-- ============ MODAL ONLINE ============ -->
-<div id="netModal" class="modal hidden">
-  <div class="modal-box">
-    <h2 id="netTitle">🌐 Online</h2>
-    <div id="netHostBox" class="hidden">
-      <div class="net-label">Código de sala</div>
-      <div id="roomCode" class="room-code">·····</div>
-      <button id="copyBtn">📋 Copiar enlace</button>
-    </div>
-    <div id="netJoinBox" class="hidden">
-      <input id="joinInput" class="code-in" maxlength="8" placeholder="CÓDIGO" autocomplete="off" autocapitalize="characters" spellcheck="false">
-      <button id="joinGo">🔗 Conectar</button>
-    </div>
-    <div id="netStatus" class="net-status"></div>
-    <button class="cancel" id="netCancel">Cancelar</button>
   </div>
 </div>
 
@@ -265,19 +222,8 @@ const SHAPES = [
   { cells:[[0,2],[1,2],[2,0],[2,1],[2,2]], color:'#e599f7' },
 ];
 
-/* RNG con semilla: en online ambos jugadores reciben EXACTAMENTE las mismas piezas */
-function mulberry32(a){
-  return function(){
-    a |= 0; a = a + 0x6D2B79F5 | 0;
-    let t = Math.imul(a ^ a >>> 15, 1 | a);
-    t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t;
-    return ((t ^ t >>> 14) >>> 0) / 4294967296;
-  };
-}
-
-function makePiece(rand){
-  rand = rand || Math.random;
-  const s = SHAPES[(rand()*SHAPES.length)|0];
+function makePiece(){
+  const s = SHAPES[(Math.random()*SHAPES.length)|0];
   let minR = Infinity, minC = Infinity;
   for (const [r,c] of s.cells){ if(r<minR)minR=r; if(c<minC)minC=c; }
   return {
@@ -338,8 +284,6 @@ class Board {
     this.accent  = cfg.accent || '#4dabf7';
     this.isAI    = !!cfg.isAI;
     this.aiMode  = cfg.aiMode || 'pvp';
-    this.isRemote = !!cfg.isRemote;          // tablero del rival online (solo se dibuja)
-    this.rand    = cfg.rand || Math.random;
 
     this.reset();
     this.buildDOM();
@@ -347,7 +291,7 @@ class Board {
 
   reset(){
     this.grid   = Array.from({length:GRID_N}, () => Array(GRID_N).fill(null));
-    this.hand   = [makePiece(this.rand), makePiece(this.rand), makePiece(this.rand)];
+    this.hand   = [makePiece(), makePiece(), makePiece()];
     this.score  = 0;
     this.combo  = 0;
     this.lines  = 0;
@@ -405,7 +349,7 @@ class Board {
     const cv = this.canvas;
 
     cv.addEventListener('pointerdown', e => {
-      if (this.dead || this.isAI || this.isRemote || game.state !== 'playing' || this.drag) return;
+      if (this.dead || this.isAI || game.state !== 'playing' || this.drag) return;
       e.preventDefault();
       const p = this.toLocal(e);
       if (p.y < TRAY_Y - 14) return;
@@ -487,7 +431,6 @@ class Board {
     this.score += piece.cells.length;
     this.hand[idx] = null;
 
-    const flStart = this.flashes.length;
     const cleared = this.clearLines();
     if (cleared > 0){
       this.combo = Math.min(this.combo + 1, 8);
@@ -497,35 +440,14 @@ class Board {
       this.combo = 0;
     }
 
-    if (this.hand.every(p => !p)) this.hand = [makePiece(this.rand), makePiece(this.rand), makePiece(this.rand)];
+    if (this.hand.every(p => !p)) this.hand = [makePiece(), makePiece(), makePiece()];
 
-    const dead = !this.hasMoves();
-    if (dead){
+    if (!this.hasMoves()){
       this.dead = true;
       this.wrap.classList.add('dead');
+      game.onBoardDead(this);
     }
-    game.onLocalMove(this, flStart);     // online: manda el estado al rival
-    if (dead) game.onBoardDead(this);
     return true;
-  }
-
-  /* ---------- ONLINE: estado serializable ---------- */
-  snapshot(flStart){
-    return {
-      g: this.grid, h: this.hand, s: this.score, c: this.combo, l: this.lines,
-      dead: this.dead,
-      f: this.flashes.slice(flStart).map(f => ({ x:f.x, y:f.y, w:f.w, h:f.h }))
-    };
-  }
-
-  applySnapshot(d){
-    this.grid  = d.g;
-    this.hand  = d.h;
-    this.score = d.s;
-    this.combo = d.c;
-    this.lines = d.l;
-    for (const f of (d.f || [])) this.flashes.push({ x:f.x, y:f.y, w:f.w, h:f.h, life:1 });
-    if (d.dead){ this.dead = true; this.wrap.classList.add('dead'); }
   }
 
   clearLines(){
@@ -770,16 +692,9 @@ const game = {
   boards: [],
   lastTs: 0,
 
-  online: false,
-
-  start(mode, opponent, opts){
-    opts = opts || {};
+  start(mode, opponent){
     this.mode     = mode;
     this.opponent = opponent || null;
-    this.online   = opponent === 'online';
-    net.decided = false; net.myRematch = false; net.theirRematch = false;
-    const ab = document.getElementById('againBtn');
-    ab.disabled = false; ab.style.display = ''; ab.textContent = '🔁 Jugar otra vez';
     this.state    = 'playing';
     this.boards   = [];
 
@@ -793,8 +708,8 @@ const game = {
     const labelEl = document.getElementById('modeLabel');
     const names = {
       classic: '🎯 CLÁSICO',
-      pvp:     '⚔️ PVP' + (opponent === 'cpu' ? ' · VS CPU' : opponent === 'online' ? ' · ONLINE' : ' · 2 JUGADORES'),
-      death:   '💀 MATA-MATA' + (opponent === 'cpu' ? ' · VS CPU' : opponent === 'online' ? ' · ONLINE' : ' · 2 JUGADORES')
+      pvp:     '⚔️ PVP' + (opponent === 'cpu' ? ' · VS CPU' : ' · 2 JUGADORES'),
+      death:   '💀 MATA-MATA' + (opponent === 'cpu' ? ' · VS CPU' : ' · 2 JUGADORES')
     };
     labelEl.textContent = names[mode] || '';
 
@@ -810,21 +725,13 @@ const game = {
       boardsEl.classList.remove('single');
       boardsEl.classList.add('duo');
 
-      const online = opponent === 'online';
-      const b1 = new Board({
-        id:'p1',
-        label: online ? 'TÚ' : 'JUGADOR 1',
-        accent:'#4dabf7',
-        rand: online ? mulberry32(opts.seed) : undefined
-      });
+      const b1 = new Board({ id:'p1', label:'JUGADOR 1', accent:'#4dabf7' });
       const b2 = new Board({
         id:'p2',
-        label: online ? 'RIVAL' : (opponent === 'cpu' ? 'CPU' : 'JUGADOR 2'),
+        label: opponent === 'cpu' ? 'CPU' : 'JUGADOR 2',
         accent:'#ff6b8b',
         isAI: opponent === 'cpu',
-        isRemote: online,
-        aiMode: mode,
-        rand: online ? mulberry32(opts.seed) : undefined   // misma semilla → mismas piezas iniciales
+        aiMode: mode
       });
       this.boards.push(b1, b2);
       boardsEl.appendChild(b1.wrap);
@@ -834,39 +741,8 @@ const game = {
     this.lastTs = performance.now();
   },
 
-  onLocalMove(board, flStart){
-    if (this.online && board === this.boards[0])
-      net.send({ t:'s', d: board.snapshot(flStart) });
-  },
-
-  /* Online: el anfitrión decide quién murió primero y avisa a los dos */
-  finishOnline(deadSide){
-    if (this.state !== 'playing') return;
-    this.state = 'over';
-    const mySide = net.isHost ? 'host' : 'guest';
-    const deadIsMe = deadSide === mySide;
-    const win = this.mode === 'pvp' ? !deadIsMe : deadIsMe;
-    const me = this.boards[0], rv = this.boards[1];
-    const pts = `Tú: <b>${me.score}</b> pts · Rival: <b>${rv.score}</b> pts`;
-    if (deadSide !== mySide && !rv.dead){ rv.dead = true; rv.wrap.classList.add('dead'); }
-
-    let title, sub;
-    if (this.mode === 'pvp'){
-      title = win ? '🏆 ¡Ganaste!' : '😵 ¡Perdiste!';
-      sub   = (deadIsMe ? 'Te quedaste sin movimientos.' : 'Tu rival se quedó sin movimientos.') + '<br>' + pts;
-    } else {
-      title = win ? '💀 ¡Ganaste por morir primero!' : '💀 ¡Perdiste!';
-      sub   = (deadIsMe ? 'Te ahogaste más rápido. Caos total.' : 'Tu rival se ahogó antes que tú.') + '<br>' + pts;
-    }
-    showResult(title, sub);
-  },
-
   onBoardDead(board){
     if (this.state !== 'playing') return;
-    if (this.online){
-      if (board === this.boards[0]) net.localDead();
-      return;
-    }
     this.state = 'over';
 
     if (this.mode === 'classic'){
@@ -908,234 +784,6 @@ const game = {
     for (const b of this.boards) b.draw();
   }
 };
-
-
-/* =========================================================
-   ONLINE (WebRTC con PeerJS · sin servidor propio)
-   ========================================================= */
-const net = {
-  PREFIX: 'blockblast-',
-  peer: null, conn: null,
-  isHost: false, mode: null,
-  decided: false, myRematch: false, theirRematch: false,
-
-  $(id){ return document.getElementById(id); },
-  status(html){ this.$('netStatus').innerHTML = html; },
-
-  showModal(view){
-    this.$('netModal').classList.remove('hidden');
-    this.$('netHostBox').classList.toggle('hidden', view !== 'host');
-    this.$('netJoinBox').classList.toggle('hidden', view !== 'join');
-    this.$('netTitle').textContent = view === 'host' ? '🌐 Crear sala' : '🌐 Unirse a sala';
-  },
-  hideModal(){ this.$('netModal').classList.add('hidden'); },
-
-  genCode(){
-    const ch = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
-    let s = '';
-    for (let i=0;i<5;i++) s += ch[(Math.random()*ch.length)|0];
-    return s;
-  },
-
-  cleanup(){
-    const c = this.conn, p = this.peer;
-    this.conn = null; this.peer = null;
-    try { c && c.close(); } catch(_){}
-    try { p && p.destroy(); } catch(_){}
-  },
-
-  /* ----- Crear sala (anfitrión) ----- */
-  host(mode){
-    this.cleanup();
-    this.isHost = true; this.mode = mode;
-    this.showModal('host');
-    this.$('roomCode').textContent = '·····';
-    if (typeof Peer === 'undefined'){
-      this.status('❌ No se pudo cargar PeerJS (¿sin internet?).'); return;
-    }
-    this.status('Creando sala…');
-
-    const create = () => {
-      const code = this.genCode();
-      const peer = new Peer(this.PREFIX + code);
-      this.peer = peer;
-      peer.on('open', () => {
-        if (peer !== this.peer) return;
-        this.code = code;
-        this.$('roomCode').textContent = code;
-        this.status('⏳ Esperando a tu rival…<br><small>Pásale el código o el enlace.</small>');
-      });
-      peer.on('connection', c => {
-        if (peer !== this.peer) return;
-        if (this.conn){ c.close(); return; }   // sala ocupada
-        this.attach(c);
-      });
-      peer.on('error', err => {
-        if (peer !== this.peer) return;
-        if (err.type === 'unavailable-id'){ try{peer.destroy();}catch(_){} create(); }
-        else this.status('❌ Error de red: ' + err.type);
-      });
-    };
-    create();
-  },
-
-  /* ----- Unirse (invitado) ----- */
-  join(raw){
-    const code = String(raw || '').toUpperCase().replace(/[^A-Z0-9]/g, '');
-    if (code.length < 4){ this.status('Escribe el código de la sala.'); return; }
-    this.cleanup();
-    this.isHost = false;
-    this.showModal('join');
-    if (typeof Peer === 'undefined'){
-      this.status('❌ No se pudo cargar PeerJS (¿sin internet?).'); return;
-    }
-    this.status('Conectando…');
-    const peer = new Peer();
-    this.peer = peer;
-    peer.on('open', () => {
-      if (peer !== this.peer) return;
-      const c = peer.connect(this.PREFIX + code, { reliable:true });
-      this.attach(c);
-      setTimeout(() => {
-        if (c === this.conn && !c.open) this.status('❌ No se pudo conectar con la sala.');
-      }, 12000);
-    });
-    peer.on('error', err => {
-      if (peer !== this.peer) return;
-      this.status(err.type === 'peer-unavailable'
-        ? '❌ No existe esa sala. Revisa el código.'
-        : '❌ Error de red: ' + err.type);
-    });
-  },
-
-  attach(c){
-    this.conn = c;
-    const onOpen = () => {
-      if (c !== this.conn) return;
-      if (this.isHost){
-        this.status('✅ ¡Rival conectado!');
-        this.startRound();
-      } else {
-        this.status('✅ Conectado. Esperando a que el anfitrión inicie…');
-      }
-    };
-    if (c.open) onOpen(); else c.on('open', onOpen);
-    c.on('data', m => { if (c === this.conn) this.onData(m); });
-    c.on('close', () => this.onClose(c));
-    c.on('error', () => this.onClose(c));
-  },
-
-  send(m){ try { if (this.conn && this.conn.open) this.conn.send(m); } catch(_){} },
-
-  /* Solo el anfitrión: reparte semilla y arranca los dos a la vez */
-  startRound(){
-    const seed = (Math.random() * 2147483647) | 0;
-    this.send({ t:'start', mode:this.mode, seed });
-    this.hideModal();
-    game.start(this.mode, 'online', { seed });
-  },
-
-  onData(m){
-    if (!m || !m.t) return;
-    switch (m.t){
-      case 'start':
-        this.hideModal();
-        game.start(m.mode, 'online', { seed: m.seed });
-        break;
-      case 's':
-        if (game.online && game.boards[1]) game.boards[1].applySnapshot(m.d);
-        break;
-      case 'dead':
-        if (this.isHost) this.decide('guest');
-        break;
-      case 'over':
-        game.finishOnline(m.deadSide);
-        break;
-      case 'rematch':
-        this.theirRematch = true;
-        this.checkRematch();
-        break;
-    }
-  },
-
-  /* El anfitrión es el árbitro: así los dos ven el mismo resultado aunque mueran a la vez */
-  decide(side){
-    if (this.decided || game.state !== 'playing') return;
-    this.decided = true;
-    this.send({ t:'over', deadSide:side });
-    game.finishOnline(side);
-  },
-
-  localDead(){
-    if (this.isHost) this.decide('host');
-    else this.send({ t:'dead' });
-  },
-
-  requestRematch(){
-    this.myRematch = true;
-    this.send({ t:'rematch' });
-    const ab = this.$('againBtn');
-    ab.disabled = true; ab.textContent = '⏳ Esperando al rival…';
-    this.checkRematch();
-  },
-  checkRematch(){
-    if (this.myRematch && this.theirRematch && this.isHost) this.startRound();
-  },
-
-  onClose(c){
-    if (c !== this.conn) return;
-    this.conn = null;
-    if (game.online && game.state === 'playing'){
-      game.state = 'over';
-      this.$('againBtn').style.display = 'none';
-      showResult('🔌 Rival desconectado', 'Se fue de la partida. ¡Ganas por abandono!');
-    } else if (game.online && game.state === 'over'){
-      const ab = this.$('againBtn');
-      ab.disabled = true; ab.textContent = '🔌 Rival desconectado';
-    } else {
-      this.status('❌ Se cerró la conexión.');
-    }
-  }
-};
-
-function leaveOnline(){
-  if (game.online){ net.cleanup(); game.online = false; }
-}
-
-/* Botones del lobby online */
-document.getElementById('joinCard').addEventListener('click', () => {
-  net.showModal('join');
-  net.status('Escribe el código que te pasó tu amigo.');
-  setTimeout(() => document.getElementById('joinInput').focus(), 50);
-});
-document.getElementById('joinGo').addEventListener('click', () => {
-  net.join(document.getElementById('joinInput').value);
-});
-document.getElementById('joinInput').addEventListener('keydown', e => {
-  if (e.key === 'Enter') net.join(e.target.value);
-});
-document.getElementById('netCancel').addEventListener('click', () => {
-  net.cleanup(); net.hideModal();
-});
-document.getElementById('copyBtn').addEventListener('click', async () => {
-  const code = net.code || '';
-  const text = location.protocol.startsWith('http')
-    ? location.origin + location.pathname + '?sala=' + code
-    : code;
-  try { await navigator.clipboard.writeText(text); net.status('📋 Copiado. ¡Envíaselo a tu rival!'); }
-  catch(_){ net.status('Copia el código manualmente: <b>' + code + '</b>'); }
-});
-document.getElementById('copyBtn').textContent =
-  location.protocol.startsWith('http') ? '📋 Copiar enlace' : '📋 Copiar código';
-
-/* Enlace de invitación ?sala=ABCDE */
-(function(){
-  const code = new URLSearchParams(location.search).get('sala');
-  if (code){
-    document.getElementById('joinInput').value = code.toUpperCase();
-    net.join(code);
-  }
-})();
 
 /* =========================================================
    RESULTADO
@@ -1181,10 +829,7 @@ document.querySelectorAll('.mode-card').forEach(btn => {
 document.querySelectorAll('#oppModal [data-opp]').forEach(btn => {
   btn.addEventListener('click', () => {
     document.getElementById('oppModal').classList.add('hidden');
-    if (pendingMode){
-      if (btn.dataset.opp === 'online') net.host(pendingMode);
-      else game.start(pendingMode, btn.dataset.opp);
-    }
+    if (pendingMode) game.start(pendingMode, btn.dataset.opp);
     pendingMode = null;
   });
 });
@@ -1195,7 +840,6 @@ document.getElementById('cancelOpp').addEventListener('click', () => {
 });
 
 document.getElementById('backBtn').addEventListener('click', () => {
-  leaveOnline();
   game.state = 'menu';
   game.boards = [];
   document.getElementById('game').classList.add('hidden');
@@ -1204,13 +848,11 @@ document.getElementById('backBtn').addEventListener('click', () => {
 });
 
 document.getElementById('againBtn').addEventListener('click', () => {
-  if (game.online){ net.requestRematch(); return; }   // revancha: espera a que ambos acepten
   document.getElementById('resultModal').classList.add('hidden');
   game.start(game.mode, game.opponent);
 });
 
 document.getElementById('menuBtn').addEventListener('click', () => {
-  leaveOnline();
   document.getElementById('resultModal').classList.add('hidden');
   game.state = 'menu';
   game.boards = [];
@@ -1221,8 +863,4 @@ document.getElementById('menuBtn').addEventListener('click', () => {
 /* Evitar zoom / scroll accidental en móvil */
 document.addEventListener('gesturestart', e => e.preventDefault());
 window.addEventListener('resize', () => {
-  for (const b of game.boards) if (b.canvas) b.setupCanvas();
-});
-</script>
-</body>
-</html>
+  
