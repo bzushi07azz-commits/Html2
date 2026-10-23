@@ -1,0 +1,1228 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>Block Blast · Multijugador</title>
+<script src="https://cdn.jsdelivr.net/npm/peerjs@1.5.4/dist/peerjs.min.js"></script>
+<style>
+  *{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
+  :root{
+    --bg1:#151a35; --bg2:#070912;
+    --blue:#4dabf7; --red:#ff6b8b; --gold:#ffd43b;
+    --panel:rgba(255,255,255,.055);
+  }
+  html,body{height:100%}
+  body{
+    font-family:system-ui,-apple-system,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+    background:radial-gradient(circle at 50% -10%, #232c5c 0%, var(--bg1) 42%, var(--bg2) 100%);
+    color:#eef2ff; min-height:100dvh; overflow-x:hidden;
+    display:flex; align-items:center; justify-content:center; padding:10px;
+    -webkit-user-select:none; user-select:none; touch-action:manipulation;
+  }
+  .hidden{display:none !important}
+
+  /* ---------- MENU ---------- */
+  #menu{width:100%; max-width:520px; text-align:center; padding:16px 0 30px}
+  #menu h1{
+    font-size:clamp(30px,9vw,46px); font-weight:900; letter-spacing:2px;
+    background:linear-gradient(180deg,#fff,#8fb6ff 60%,#4d7bff);
+    -webkit-background-clip:text; background-clip:text; color:transparent;
+    filter:drop-shadow(0 6px 20px rgba(77,171,247,.45));
+  }
+  #menu .sub{color:#8d9bc9;font-size:13px;letter-spacing:5px;text-transform:uppercase;margin:6px 0 26px}
+  .modes{display:flex;flex-direction:column;gap:12px}
+  .mode-card{
+    display:flex;align-items:center;gap:14px;text-align:left;
+    background:linear-gradient(135deg,rgba(255,255,255,.09),rgba(255,255,255,.03));
+    border:1px solid rgba(255,255,255,.12); border-radius:18px;
+    padding:14px 16px; color:#eef2ff; cursor:pointer;
+    transition:transform .15s, border-color .2s, box-shadow .2s;
+    font-family:inherit;
+  }
+  .mode-card:hover{transform:translateY(-2px);border-color:rgba(120,170,255,.6);box-shadow:0 10px 30px rgba(60,110,255,.25)}
+  .mode-card:active{transform:scale(.98)}
+  .mode-card .ico{font-size:28px;line-height:1}
+  .mode-card .t{display:block;font-size:17px;font-weight:800}
+  .mode-card .d{display:block;font-size:12px;color:#9aa8d4;margin-top:2px;line-height:1.35}
+  .mode-card[data-mode="pvp"] .ico{filter:drop-shadow(0 0 8px #ff6b8b)}
+  .mode-card[data-mode="death"] .ico{filter:drop-shadow(0 0 8px #b06ab3)}
+
+  /* ---------- MODAL ---------- */
+  .modal{position:fixed;inset:0;background:rgba(4,6,16,.78);backdrop-filter:blur(6px);
+    display:flex;align-items:center;justify-content:center;z-index:50;padding:20px}
+  .modal-box{
+    background:linear-gradient(160deg,#1c2444,#10142a);
+    border:1px solid rgba(255,255,255,.14); border-radius:22px; padding:24px 20px;
+    width:100%;max-width:360px; text-align:center;
+    box-shadow:0 30px 70px rgba(0,0,0,.6);
+  }
+  .modal-box h2{font-size:20px;margin-bottom:16px}
+  .modal-box button{
+    width:100%;margin-bottom:10px;padding:13px;border-radius:14px;border:1px solid rgba(255,255,255,.14);
+    background:rgba(255,255,255,.07);color:#eef2ff;font-size:15px;font-weight:700;
+    font-family:inherit;cursor:pointer;transition:.15s;
+  }
+  .modal-box button:hover{background:rgba(120,170,255,.22);border-color:rgba(120,170,255,.6)}
+  .modal-box button.cancel{background:transparent;color:#8d9bc9;font-weight:600}
+
+  /* ---------- GAME ---------- */
+  #game{width:100%;max-width:980px;display:flex;flex-direction:column;gap:10px;align-items:center}
+  #topbar{
+    width:100%;display:flex;align-items:center;gap:10px;
+    background:var(--panel);border:1px solid rgba(255,255,255,.09);
+    border-radius:14px;padding:8px 12px;
+  }
+  #backBtn{
+    background:rgba(255,255,255,.08);border:1px solid rgba(255,255,255,.12);
+    color:#dfe7ff;width:34px;height:34px;border-radius:10px;font-size:17px;cursor:pointer;
+    display:flex;align-items:center;justify-content:center;flex:0 0 auto;font-family:inherit;
+  }
+  #backBtn:hover{background:rgba(255,120,150,.25)}
+  #modeLabel{font-size:13px;font-weight:800;letter-spacing:1.5px;text-transform:uppercase;color:#9fb4ff}
+
+  #boards{display:flex;gap:10px;justify-content:center;align-items:flex-start;width:100%}
+  .board-wrap{display:flex;flex-direction:column;gap:6px;flex:0 1 auto}
+  #boards.single .board-wrap{width:min(94vw,400px)}
+  #boards.duo .board-wrap{width:calc(50% - 5px);max-width:400px}
+  .board-head{
+    display:flex;align-items:center;justify-content:space-between;
+    padding:6px 12px;border-radius:11px;font-size:12px;font-weight:800;
+    background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.08);
+    letter-spacing:.5px;
+  }
+  .board-head .pname{display:flex;align-items:center;gap:6px;color:#cfd9ff}
+  .board-head .dot{width:9px;height:9px;border-radius:50%;box-shadow:0 0 10px currentColor}
+  .board-head .pscore{font-size:15px;color:#fff;font-variant-numeric:tabular-nums}
+  .board-head.p1{box-shadow:inset 0 0 0 1px rgba(77,171,247,.25)}
+  .board-head.p2{box-shadow:inset 0 0 0 1px rgba(255,107,139,.25)}
+  canvas.board-canvas{
+    display:block;width:100%;height:auto;border-radius:16px;
+    touch-action:none;cursor:pointer;
+    background:rgba(255,255,255,.028);
+    border:1px solid rgba(255,255,255,.07);
+  }
+  .board-wrap.dead canvas{filter:grayscale(.65) brightness(.55)}
+
+  /* ---------- RESULT ---------- */
+  #resultTitle{font-size:26px;font-weight:900;margin-bottom:6px;
+    background:linear-gradient(180deg,#fff,#8fb6ff);-webkit-background-clip:text;background-clip:text;color:transparent}
+  #resultSub{color:#9aa8d4;font-size:14px;margin-bottom:18px;line-height:1.5}
+
+  /* ---------- ONLINE ---------- */
+  .mode-card[data-online] .ico{filter:drop-shadow(0 0 8px #38d9a9)}
+  .net-label{font-size:12px;color:#8d9bc9;letter-spacing:2px;text-transform:uppercase;margin-bottom:6px}
+  .room-code{
+    font-size:38px;font-weight:900;letter-spacing:8px;margin:0 0 14px;padding:10px 0 10px 8px;
+    border-radius:14px;background:rgba(255,255,255,.06);border:1px dashed rgba(255,255,255,.22);
+    color:#ffd43b;-webkit-user-select:text;user-select:text;
+  }
+  .modal-box input.code-in{
+    width:100%;margin-bottom:10px;padding:13px;border-radius:14px;text-align:center;
+    border:1px solid rgba(255,255,255,.18);background:rgba(255,255,255,.07);color:#fff;
+    font-size:24px;font-weight:800;letter-spacing:6px;text-transform:uppercase;font-family:inherit;outline:none;
+    -webkit-user-select:text;user-select:text;
+  }
+  .modal-box input.code-in:focus{border-color:rgba(120,170,255,.7)}
+  .net-status{min-height:20px;margin:2px 0 14px;font-size:14px;color:#b8c4ee;line-height:1.4}
+  .modal-box button:disabled{opacity:.55;cursor:default}
+
+  @media (max-width:520px){
+    #menu{padding-top:4px}
+    .mode-card{padding:12px}
+  }
+</style>
+</head>
+<body>
+
+<!-- ================= MENÚ ================= -->
+<div id="menu">
+  <h1>BLOCK BLAST</h1>
+  <div class="sub">Multijugador</div>
+  <div class="modes">
+    <button class="mode-card" data-mode="classic">
+      <span class="ico">🎯</span>
+      <span><span class="t">Modo Clásico</span>
+      <span class="d">El de toda la vida. Encaja bloques, limpia líneas y supera tu récord.</span></span>
+    </button>
+    <button class="mode-card" data-mode="pvp">
+      <span class="ico">⚔️</span>
+      <span><span class="t">Modo PvP</span>
+      <span class="d">Pantalla dividida. El que se queda sin movimientos pierde… y hace ganar al otro.</span></span>
+    </button>
+    <button class="mode-card" data-mode="death">
+      <span class="ico">💀</span>
+      <span><span class="t">Modo Mata-Mata</span>
+      <span class="d">Todo al revés: el que se queda sin movimientos MÁS RÁPIDO gana la partida.</span></span>
+    </button>
+    <button class="mode-card" id="joinCard" data-online="1">
+      <span class="ico">🌐</span>
+      <span><span class="t">Unirse a sala online</span>
+      <span class="d">¿Tu amigo creó una sala? Escribe su código y juega desde tu propio dispositivo.</span></span>
+    </button>
+  </div>
+</div>
+
+<!-- ============ MODAL OPONENTE ============ -->
+<div id="oppModal" class="modal hidden">
+  <div class="modal-box">
+    <h2>¿Contra quién juegas?</h2>
+    <button data-opp="cpu">🤖 Contra la máquina</button>
+    <button data-opp="online">🌐 Online (cada uno en su dispositivo)</button>
+    <button data-opp="human">👥 2 jugadores (misma pantalla)</button>
+    <button class="cancel" id="cancelOpp">Cancelar</button>
+  </div>
+</div>
+
+<!-- ============ MODAL ONLINE ============ -->
+<div id="netModal" class="modal hidden">
+  <div class="modal-box">
+    <h2 id="netTitle">🌐 Online</h2>
+    <div id="netHostBox" class="hidden">
+      <div class="net-label">Código de sala</div>
+      <div id="roomCode" class="room-code">·····</div>
+      <button id="copyBtn">📋 Copiar enlace</button>
+    </div>
+    <div id="netJoinBox" class="hidden">
+      <input id="joinInput" class="code-in" maxlength="8" placeholder="CÓDIGO" autocomplete="off" autocapitalize="characters" spellcheck="false">
+      <button id="joinGo">🔗 Conectar</button>
+    </div>
+    <div id="netStatus" class="net-status"></div>
+    <button class="cancel" id="netCancel">Cancelar</button>
+  </div>
+</div>
+
+<!-- ============ JUEGO ============ -->
+<div id="game" class="hidden">
+  <div id="topbar">
+    <button id="backBtn">←</button>
+    <div id="modeLabel">CLÁSICO</div>
+  </div>
+  <div id="boards"></div>
+</div>
+
+<!-- ============ RESULTADO ============ -->
+<div id="resultModal" class="modal hidden">
+  <div class="modal-box">
+    <div id="resultTitle">¡Fin!</div>
+    <div id="resultSub"></div>
+    <button id="againBtn">🔁 Jugar otra vez</button>
+    <button class="cancel" id="menuBtn">🏠 Volver al menú</button>
+  </div>
+</div>
+
+<script>
+/* =========================================================
+   CONFIGURACIÓN / GEOMETRÍA
+   ========================================================= */
+const GRID_N   = 8;
+const CELL     = 38;
+const PAD      = 8;
+const GRID_PX  = CELL * GRID_N;          // 304
+const W        = GRID_PX + PAD * 2;      // 320
+const TRAY_Y   = PAD + GRID_PX + 14;     // 326
+const TRAY_H   = 92;
+const H        = TRAY_Y + TRAY_H + PAD;  // 426
+
+/* =========================================================
+   PIEZAS
+   ========================================================= */
+const SHAPES = [
+  { cells:[[0,0]], color:'#ff7a7a' },
+
+  { cells:[[0,0],[0,1]], color:'#ffa94d' },
+  { cells:[[0,0],[1,0]], color:'#ffa94d' },
+
+  { cells:[[0,0],[0,1],[0,2]], color:'#ffd43b' },
+  { cells:[[0,0],[1,0],[2,0]], color:'#ffd43b' },
+
+  { cells:[[0,0],[0,1],[0,2],[0,3]], color:'#a9e34b' },
+  { cells:[[0,0],[1,0],[2,0],[3,0]], color:'#a9e34b' },
+
+  { cells:[[0,0],[0,1],[0,2],[0,3],[0,4]], color:'#38d9a9' },
+  { cells:[[0,0],[1,0],[2,0],[3,0],[4,0]], color:'#38d9a9' },
+
+  { cells:[[0,0],[0,1],[1,0],[1,1]], color:'#4dabf7' },
+  { cells:[[0,0],[0,1],[0,2],[1,0],[1,1],[1,2],[2,0],[2,1],[2,2]], color:'#748ffc' },
+
+  { cells:[[0,0],[0,1],[0,2],[1,0],[1,1],[1,2]], color:'#9775fa' },
+  { cells:[[0,0],[0,1],[1,0],[1,1],[2,0],[2,1]], color:'#9775fa' },
+
+  { cells:[[0,0],[1,0],[1,1]], color:'#f783ac' },
+  { cells:[[0,0],[0,1],[1,0]], color:'#f783ac' },
+  { cells:[[0,0],[0,1],[1,1]], color:'#f783ac' },
+  { cells:[[0,1],[1,0],[1,1]], color:'#f783ac' },
+
+  { cells:[[0,0],[0,1],[0,2],[1,1]], color:'#ff922b' },
+  { cells:[[0,1],[1,0],[1,1],[1,2]], color:'#ff922b' },
+
+  { cells:[[0,1],[0,2],[1,0],[1,1]], color:'#63e6be' },
+  { cells:[[0,0],[0,1],[1,1],[1,2]], color:'#63e6be' },
+
+  { cells:[[0,0],[1,0],[2,0],[2,1],[2,2]], color:'#e599f7' },
+  { cells:[[0,0],[0,1],[0,2],[1,0],[2,0]], color:'#e599f7' },
+  { cells:[[0,0],[0,1],[0,2],[1,2],[2,2]], color:'#e599f7' },
+  { cells:[[0,2],[1,2],[2,0],[2,1],[2,2]], color:'#e599f7' },
+];
+
+/* RNG con semilla: en online ambos jugadores reciben EXACTAMENTE las mismas piezas */
+function mulberry32(a){
+  return function(){
+    a |= 0; a = a + 0x6D2B79F5 | 0;
+    let t = Math.imul(a ^ a >>> 15, 1 | a);
+    t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t;
+    return ((t ^ t >>> 14) >>> 0) / 4294967296;
+  };
+}
+
+function makePiece(rand){
+  rand = rand || Math.random;
+  const s = SHAPES[(rand()*SHAPES.length)|0];
+  let minR = Infinity, minC = Infinity;
+  for (const [r,c] of s.cells){ if(r<minR)minR=r; if(c<minC)minC=c; }
+  return {
+    cells: s.cells.map(([r,c]) => [r-minR, c-minC]),
+    color: s.color
+  };
+}
+
+function bounds(cells){
+  let maxR = 0, maxC = 0;
+  for (const [r,c] of cells){ if(r>maxR)maxR=r; if(c>maxC)maxC=c; }
+  return { rows:maxR+1, cols:maxC+1 };
+}
+
+/* =========================================================
+   DIBUJO
+   ========================================================= */
+function roundRect(ctx,x,y,w,h,r){
+  r = Math.min(r, w/2, h/2);
+  ctx.beginPath();
+  ctx.moveTo(x+r,y);
+  ctx.arcTo(x+w,y,x+w,y+h,r);
+  ctx.arcTo(x+w,y+h,x,y+h,r);
+  ctx.arcTo(x,y+h,x,y,r);
+  ctx.arcTo(x,y,x+w,y,r);
+  ctx.closePath();
+}
+
+function drawCell(ctx,x,y,s,color,alpha){
+  const pad = Math.max(1.2, s*0.07);
+  const r   = s*0.24;
+  if (alpha !== undefined) ctx.globalAlpha = alpha;
+
+  ctx.fillStyle = color;
+  roundRect(ctx, x+pad, y+pad, s-pad*2, s-pad*2, r);
+  ctx.fill();
+
+  // brillo superior
+  ctx.fillStyle = 'rgba(255,255,255,.32)';
+  roundRect(ctx, x+pad*2.1, y+pad*2.1, s-pad*4.2, (s-pad*4.2)*0.38, r*0.75);
+  ctx.fill();
+
+  // sombra inferior
+  ctx.fillStyle = 'rgba(0,0,0,.20)';
+  roundRect(ctx, x+pad*2.1, y+s-pad*2.1-(s-pad*4.2)*0.28, s-pad*4.2, (s-pad*4.2)*0.28, r*0.7);
+  ctx.fill();
+
+  ctx.globalAlpha = 1;
+}
+
+/* =========================================================
+   TABLERO
+   ========================================================= */
+class Board {
+  constructor(cfg){
+    this.id      = cfg.id;
+    this.label   = cfg.label;
+    this.accent  = cfg.accent || '#4dabf7';
+    this.isAI    = !!cfg.isAI;
+    this.aiMode  = cfg.aiMode || 'pvp';
+    this.isRemote = !!cfg.isRemote;          // tablero del rival online (solo se dibuja)
+    this.rand    = cfg.rand || Math.random;
+
+    this.reset();
+    this.buildDOM();
+  }
+
+  reset(){
+    this.grid   = Array.from({length:GRID_N}, () => Array(GRID_N).fill(null));
+    this.hand   = [makePiece(this.rand), makePiece(this.rand), makePiece(this.rand)];
+    this.score  = 0;
+    this.combo  = 0;
+    this.lines  = 0;
+    this.dead   = false;
+    this.drag   = null;
+    this.flashes= [];
+    this.aiTimer= 0.7 + Math.random()*0.7;
+  }
+
+  /* ---------- DOM ---------- */
+  buildDOM(){
+    this.wrap = document.createElement('div');
+    this.wrap.className = 'board-wrap';
+
+    this.head = document.createElement('div');
+    this.head.className = 'board-head ' + (this.id === 'p1' ? 'p1' : 'p2');
+    this.head.innerHTML =
+      `<span class="pname"><span class="dot" style="background:${this.accent};color:${this.accent}"></span>${this.label}</span>
+       <span class="pscore">0</span>`;
+    this.scoreEl = this.head.querySelector('.pscore');
+
+    this.canvas = document.createElement('canvas');
+    this.canvas.className = 'board-canvas';
+    this.ctx = this.canvas.getContext('2d');
+    this.setupCanvas();
+
+    this.wrap.appendChild(this.head);
+    this.wrap.appendChild(this.canvas);
+
+    this.bindEvents();
+  }
+
+  setupCanvas(){
+    const dpr = Math.min(window.devicePixelRatio || 1, 2);
+    this.canvas.width  = W * dpr;
+    this.canvas.height = H * dpr;
+    this.ctx.setTransform(dpr,0,0,dpr,0,0);
+  }
+
+  syncHUD(){
+    const v = String(this.score);
+    if (this.scoreEl.textContent !== v) this.scoreEl.textContent = v;
+  }
+
+  /* ---------- ENTRADA ---------- */
+  toLocal(e){
+    const r = this.canvas.getBoundingClientRect();
+    return {
+      x: (e.clientX - r.left) * (W / r.width),
+      y: (e.clientY - r.top ) * (H / r.height)
+    };
+  }
+
+  bindEvents(){
+    const cv = this.canvas;
+
+    cv.addEventListener('pointerdown', e => {
+      if (this.dead || this.isAI || this.isRemote || game.state !== 'playing' || this.drag) return;
+      e.preventDefault();
+      const p = this.toLocal(e);
+      if (p.y < TRAY_Y - 14) return;
+
+      const lay = this.trayLayout();
+      let idx = -1;
+      for (let i=0;i<3;i++){
+        const L = lay[i];
+        if (!L) continue;
+        const hw = Math.max(L.w, 46)/2;
+        const hh = Math.max(L.h, 46)/2;
+        if (Math.abs(p.x - L.cx) <= hw && Math.abs(p.y - L.cy) <= hh){ idx = i; break; }
+      }
+      if (idx < 0) return;
+
+      this.drag = { idx, pointerId:e.pointerId, x:p.x, y:p.y };
+      try { cv.setPointerCapture(e.pointerId); } catch(_){}
+    });
+
+    cv.addEventListener('pointermove', e => {
+      if (!this.drag || e.pointerId !== this.drag.pointerId) return;
+      e.preventDefault();
+      const p = this.toLocal(e);
+      this.drag.x = p.x;
+      this.drag.y = p.y;
+    });
+
+    const end = e => {
+      if (!this.drag || e.pointerId !== this.drag.pointerId) return;
+      e.preventDefault();
+      this.dropPiece();
+    };
+    cv.addEventListener('pointerup', end);
+    cv.addEventListener('pointercancel', end);
+    cv.addEventListener('contextmenu', e => e.preventDefault());
+  }
+
+  dropPiece(){
+    const d = this.drag;
+    this.drag = null;
+    if (!d) return;
+    const piece = this.hand[d.idx];
+    if (!piece) return;
+
+    const b = bounds(piece.cells);
+    const tlX = d.x - b.cols*CELL/2;
+    const tlY = d.y - b.rows*CELL/2;
+    const gc  = Math.round((tlX - PAD)/CELL);
+    const gr  = Math.round((tlY - PAD)/CELL);
+
+    if (this.canPlace(piece.cells, gr, gc)) this.placeAt(d.idx, gr, gc);
+  }
+
+  /* ---------- LÓGICA ---------- */
+  canPlace(cells, r, c){
+    for (const [dr,dc] of cells){
+      const rr = r+dr, cc = c+dc;
+      if (rr < 0 || rr >= GRID_N || cc < 0 || cc >= GRID_N) return false;
+      if (this.grid[rr][cc]) return false;
+    }
+    return true;
+  }
+
+  hasMoves(){
+    for (const p of this.hand){
+      if (!p) continue;
+      for (let r=0;r<GRID_N;r++)
+        for (let c=0;c<GRID_N;c++)
+          if (this.canPlace(p.cells, r, c)) return true;
+    }
+    return false;
+  }
+
+  placeAt(idx, r, c){
+    const piece = this.hand[idx];
+    if (!piece || !this.canPlace(piece.cells, r, c)) return false;
+
+    for (const [dr,dc] of piece.cells) this.grid[r+dr][c+dc] = piece.color;
+    this.score += piece.cells.length;
+    this.hand[idx] = null;
+
+    const flStart = this.flashes.length;
+    const cleared = this.clearLines();
+    if (cleared > 0){
+      this.combo = Math.min(this.combo + 1, 8);
+      this.score += cleared * 10 * this.combo;
+      this.lines += cleared;
+    } else {
+      this.combo = 0;
+    }
+
+    if (this.hand.every(p => !p)) this.hand = [makePiece(this.rand), makePiece(this.rand), makePiece(this.rand)];
+
+    const dead = !this.hasMoves();
+    if (dead){
+      this.dead = true;
+      this.wrap.classList.add('dead');
+    }
+    game.onLocalMove(this, flStart);     // online: manda el estado al rival
+    if (dead) game.onBoardDead(this);
+    return true;
+  }
+
+  /* ---------- ONLINE: estado serializable ---------- */
+  snapshot(flStart){
+    return {
+      g: this.grid, h: this.hand, s: this.score, c: this.combo, l: this.lines,
+      dead: this.dead,
+      f: this.flashes.slice(flStart).map(f => ({ x:f.x, y:f.y, w:f.w, h:f.h }))
+    };
+  }
+
+  applySnapshot(d){
+    this.grid  = d.g;
+    this.hand  = d.h;
+    this.score = d.s;
+    this.combo = d.c;
+    this.lines = d.l;
+    for (const f of (d.f || [])) this.flashes.push({ x:f.x, y:f.y, w:f.w, h:f.h, life:1 });
+    if (d.dead){ this.dead = true; this.wrap.classList.add('dead'); }
+  }
+
+  clearLines(){
+    const rows = [], cols = [];
+    for (let i=0;i<GRID_N;i++) if (this.grid[i].every(v => v)) rows.push(i);
+    for (let j=0;j<GRID_N;j++){
+      let full = true;
+      for (let i=0;i<GRID_N;i++) if (!this.grid[i][j]){ full = false; break; }
+      if (full) cols.push(j);
+    }
+    for (const i of rows) for (let j=0;j<GRID_N;j++) this.grid[i][j] = null;
+    for (const j of cols) for (let i=0;i<GRID_N;i++) this.grid[i][j] = null;
+
+    for (const i of rows) this.flashes.push({ x:PAD, y:PAD+i*CELL, w:GRID_PX, h:CELL, life:1 });
+    for (const j of cols) this.flashes.push({ x:PAD+j*CELL, y:PAD, w:CELL, h:GRID_PX, life:1 });
+
+    return rows.length + cols.length;
+  }
+
+  wouldClear(cells, r, c){
+    const g = this.grid.map(row => row.slice());
+    for (const [dr,dc] of cells) g[r+dr][c+dc] = 1;
+    const rows = [], cols = [];
+    for (let i=0;i<GRID_N;i++) if (g[i].every(v => v)) rows.push(i);
+    for (let j=0;j<GRID_N;j++){
+      let full = true;
+      for (let i=0;i<GRID_N;i++) if (!g[i][j]){ full = false; break; }
+      if (full) cols.push(j);
+    }
+    return { rows, cols };
+  }
+
+  /* ---------- IA ---------- */
+  aiThink(){
+    if (this.dead) return;
+    let best = null;
+
+    for (let i=0;i<3;i++){
+      const p = this.hand[i];
+      if (!p) continue;
+      for (let r=0;r<GRID_N;r++){
+        for (let c=0;c<GRID_N;c++){
+          if (!this.canPlace(p.cells, r, c)) continue;
+          const sc = this.evaluate(p, r, c);
+          if (!best || sc > best.sc) best = { i, r, c, sc };
+        }
+      }
+    }
+    if (best) this.placeAt(best.i, best.r, best.c);
+    else { this.dead = true; this.wrap.classList.add('dead'); game.onBoardDead(this); }
+  }
+
+  evaluate(piece, r, c){
+    const g = this.grid.map(row => row.slice());
+    for (const [dr,dc] of piece.cells) g[r+dr][c+dc] = 1;
+
+    const rows = [], cols = [];
+    for (let i=0;i<GRID_N;i++) if (g[i].every(v => v)) rows.push(i);
+    for (let j=0;j<GRID_N;j++){
+      let full = true;
+      for (let i=0;i<GRID_N;i++) if (!g[i][j]){ full = false; break; }
+      if (full) cols.push(j);
+    }
+    const lines = rows.length + cols.length;
+    for (const i of rows) for (let j=0;j<GRID_N;j++) g[i][j] = 0;
+    for (const j of cols) for (let i=0;i<GRID_N;i++) g[i][j] = 0;
+
+    // adyacencia (compactación)
+    let adj = 0;
+    for (const [dr,dc] of piece.cells){
+      const rr = r+dr, cc = c+dc;
+      for (const [ar,ac] of [[1,0],[-1,0],[0,1],[0,-1]]){
+        const nr = rr+ar, nc = cc+ac;
+        if (nr<0||nr>=GRID_N||nc<0||nc>=GRID_N) adj += 0.4;
+        else if (this.grid[nr][nc]) adj += 1;
+      }
+    }
+
+    // huecos aislados + ocupación
+    let iso = 0, empty = 0;
+    for (let i=0;i<GRID_N;i++) for (let j=0;j<GRID_N;j++){
+      if (g[i][j]) continue;
+      empty++;
+      let n = 0;
+      for (const [ar,ac] of [[1,0],[-1,0],[0,1],[0,-1]]){
+        const nr = i+ar, nc = j+ac;
+        if (nr>=0&&nr<GRID_N&&nc>=0&&nc<GRID_N && !g[nr][nc]) n++;
+      }
+      if (n === 0) iso++;
+    }
+
+    if (this.aiMode === 'death'){
+      // Quiere AHOGARSE rápido: llenar, compactar, crear huecos, NO limpiar líneas
+      return -lines*320 + adj*4.5 + iso*9 + (64 - empty)*1.2;
+    } else {
+      // Quiere SOBREVIVIR: limpiar líneas, evitar huecos
+      return lines*160 + adj*2.2 - iso*22 - empty*0.25;
+    }
+  }
+
+  /* ---------- UPDATE ---------- */
+  update(dt){
+    for (const f of this.flashes) f.life -= dt * 3.2;
+    if (this.flashes.length) this.flashes = this.flashes.filter(f => f.life > 0);
+
+    if (this.isAI && !this.dead && game.state === 'playing'){
+      this.aiTimer -= dt;
+      if (this.aiTimer <= 0){
+        this.aiTimer = 0.55 + Math.random()*0.55;
+        this.aiThink();
+      }
+    }
+  }
+
+  /* ---------- LAYOUT BANDEJA ---------- */
+  trayLayout(){
+    const slotW = (W - PAD*2) / 3;
+    const out = [];
+    for (let i=0;i<3;i++){
+      const p = this.hand[i];
+      if (!p){ out.push(null); continue; }
+      const b = bounds(p.cells);
+      const s = Math.min(CELL*0.82, (slotW*0.82)/b.cols, (TRAY_H*0.82)/b.rows);
+      out.push({
+        cx: PAD + slotW*(i+0.5),
+        cy: TRAY_Y + TRAY_H/2,
+        s,
+        w: b.cols*s,
+        h: b.rows*s
+      });
+    }
+    return out;
+  }
+
+  /* ---------- RENDER ---------- */
+  draw(){
+    const ctx = this.ctx;
+    ctx.clearRect(0,0,W,H);
+
+    /* marco del tablero */
+    ctx.fillStyle = 'rgba(255,255,255,.035)';
+    roundRect(ctx, PAD-5, PAD-5, GRID_PX+10, GRID_PX+10, 16);
+    ctx.fill();
+
+    /* celdas */
+    for (let r=0;r<GRID_N;r++){
+      for (let c=0;c<GRID_N;c++){
+        const x = PAD + c*CELL;
+        const y = PAD + r*CELL;
+        const v = this.grid[r][c];
+        if (v){
+          drawCell(ctx, x, y, CELL, v);
+        } else {
+          ctx.fillStyle = 'rgba(255,255,255,.055)';
+          roundRect(ctx, x+2.5, y+2.5, CELL-5, CELL-5, 7);
+          ctx.fill();
+        }
+      }
+    }
+
+    /* previsualización fantasma */
+    if (this.drag && this.hand[this.drag.idx]){
+      const piece = this.hand[this.drag.idx];
+      const b = bounds(piece.cells);
+      const tlX = this.drag.x - b.cols*CELL/2;
+      const tlY = this.drag.y - b.rows*CELL/2;
+      const gc  = Math.round((tlX - PAD)/CELL);
+      const gr  = Math.round((tlY - PAD)/CELL);
+
+      if (this.canPlace(piece.cells, gr, gc)){
+        const wc = this.wouldClear(piece.cells, gr, gc);
+
+        // resaltar líneas que se limpiarían
+        ctx.fillStyle = 'rgba(140,255,190,.16)';
+        for (const i of wc.rows) roundRect(ctx, PAD, PAD+i*CELL, GRID_PX, CELL, 8), ctx.fill();
+        for (const j of wc.cols) roundRect(ctx, PAD+j*CELL, PAD, CELL, GRID_PX, 8), ctx.fill();
+
+        // celdas fantasma
+        for (const [dr,dc] of piece.cells){
+          drawCell(ctx, PAD+(gc+dc)*CELL, PAD+(gr+dr)*CELL, CELL, piece.color, 0.42);
+        }
+      }
+    }
+
+    /* destellos de líneas limpiadas */
+    for (const f of this.flashes){
+      ctx.globalAlpha = Math.max(0, f.life) * 0.65;
+      ctx.fillStyle = '#ffffff';
+      roundRect(ctx, f.x, f.y, f.w, f.h, 8);
+      ctx.fill();
+    }
+    ctx.globalAlpha = 1;
+
+    /* separador bandeja */
+    ctx.fillStyle = 'rgba(255,255,255,.06)';
+    roundRect(ctx, PAD, TRAY_Y-8, W-PAD*2, 2, 1);
+    ctx.fill();
+
+    /* piezas de la bandeja */
+    const lay = this.trayLayout();
+    for (let i=0;i<3;i++){
+      const L = lay[i];
+      if (!L) continue;
+      if (this.drag && this.drag.idx === i) continue;
+
+      const p = this.hand[i];
+      const b = bounds(p.cells);
+      const x0 = L.cx - b.cols*L.s/2;
+      const y0 = L.cy - b.rows*L.s/2;
+
+      for (const [r,c] of p.cells){
+        drawCell(ctx, x0 + c*L.s, y0 + r*L.s, L.s, p.color);
+      }
+    }
+
+    /* pieza arrastrada (encima de todo) */
+    if (this.drag && this.hand[this.drag.idx]){
+      const p = this.hand[this.drag.idx];
+      const b = bounds(p.cells);
+      const x0 = this.drag.x - b.cols*CELL/2;
+      const y0 = this.drag.y - b.rows*CELL/2;
+      ctx.globalAlpha = 0.95;
+      for (const [r,c] of p.cells){
+        drawCell(ctx, x0 + c*CELL, y0 + r*CELL, CELL, p.color);
+      }
+      ctx.globalAlpha = 1;
+    }
+
+    this.syncHUD();
+  }
+
+  destroy(){ /* nada que limpiar manualmente */ }
+}
+
+/* =========================================================
+   JUEGO
+   ========================================================= */
+const game = {
+  mode: null,
+  opponent: null,
+  state: 'menu',      // menu | playing | over
+  boards: [],
+  lastTs: 0,
+
+  online: false,
+
+  start(mode, opponent, opts){
+    opts = opts || {};
+    this.mode     = mode;
+    this.opponent = opponent || null;
+    this.online   = opponent === 'online';
+    net.decided = false; net.myRematch = false; net.theirRematch = false;
+    const ab = document.getElementById('againBtn');
+    ab.disabled = false; ab.style.display = ''; ab.textContent = '🔁 Jugar otra vez';
+    this.state    = 'playing';
+    this.boards   = [];
+
+    document.getElementById('menu').classList.add('hidden');
+    document.getElementById('resultModal').classList.add('hidden');
+    document.getElementById('game').classList.remove('hidden');
+
+    const boardsEl = document.getElementById('boards');
+    boardsEl.innerHTML = '';
+
+    const labelEl = document.getElementById('modeLabel');
+    const names = {
+      classic: '🎯 CLÁSICO',
+      pvp:     '⚔️ PVP' + (opponent === 'cpu' ? ' · VS CPU' : opponent === 'online' ? ' · ONLINE' : ' · 2 JUGADORES'),
+      death:   '💀 MATA-MATA' + (opponent === 'cpu' ? ' · VS CPU' : opponent === 'online' ? ' · ONLINE' : ' · 2 JUGADORES')
+    };
+    labelEl.textContent = names[mode] || '';
+
+    if (mode === 'classic'){
+      boardsEl.classList.add('single');
+      boardsEl.classList.remove('duo');
+
+      const b = new Board({ id:'p1', label:'TÚ', accent:'#4dabf7' });
+      this.boards.push(b);
+      boardsEl.appendChild(b.wrap);
+
+    } else {
+      boardsEl.classList.remove('single');
+      boardsEl.classList.add('duo');
+
+      const online = opponent === 'online';
+      const b1 = new Board({
+        id:'p1',
+        label: online ? 'TÚ' : 'JUGADOR 1',
+        accent:'#4dabf7',
+        rand: online ? mulberry32(opts.seed) : undefined
+      });
+      const b2 = new Board({
+        id:'p2',
+        label: online ? 'RIVAL' : (opponent === 'cpu' ? 'CPU' : 'JUGADOR 2'),
+        accent:'#ff6b8b',
+        isAI: opponent === 'cpu',
+        isRemote: online,
+        aiMode: mode,
+        rand: online ? mulberry32(opts.seed) : undefined   // misma semilla → mismas piezas iniciales
+      });
+      this.boards.push(b1, b2);
+      boardsEl.appendChild(b1.wrap);
+      boardsEl.appendChild(b2.wrap);
+    }
+
+    this.lastTs = performance.now();
+  },
+
+  onLocalMove(board, flStart){
+    if (this.online && board === this.boards[0])
+      net.send({ t:'s', d: board.snapshot(flStart) });
+  },
+
+  /* Online: el anfitrión decide quién murió primero y avisa a los dos */
+  finishOnline(deadSide){
+    if (this.state !== 'playing') return;
+    this.state = 'over';
+    const mySide = net.isHost ? 'host' : 'guest';
+    const deadIsMe = deadSide === mySide;
+    const win = this.mode === 'pvp' ? !deadIsMe : deadIsMe;
+    const me = this.boards[0], rv = this.boards[1];
+    const pts = `Tú: <b>${me.score}</b> pts · Rival: <b>${rv.score}</b> pts`;
+    if (deadSide !== mySide && !rv.dead){ rv.dead = true; rv.wrap.classList.add('dead'); }
+
+    let title, sub;
+    if (this.mode === 'pvp'){
+      title = win ? '🏆 ¡Ganaste!' : '😵 ¡Perdiste!';
+      sub   = (deadIsMe ? 'Te quedaste sin movimientos.' : 'Tu rival se quedó sin movimientos.') + '<br>' + pts;
+    } else {
+      title = win ? '💀 ¡Ganaste por morir primero!' : '💀 ¡Perdiste!';
+      sub   = (deadIsMe ? 'Te ahogaste más rápido. Caos total.' : 'Tu rival se ahogó antes que tú.') + '<br>' + pts;
+    }
+    showResult(title, sub);
+  },
+
+  onBoardDead(board){
+    if (this.state !== 'playing') return;
+    if (this.online){
+      if (board === this.boards[0]) net.localDead();
+      return;
+    }
+    this.state = 'over';
+
+    if (this.mode === 'classic'){
+      showResult('¡Sin movimientos!',
+        `Puntuación final: <b>${board.score}</b> puntos<br>Líneas limpiadas: <b>${board.lines}</b>`);
+      return;
+    }
+
+    const idx = this.boards.indexOf(board);
+    let winnerIdx;
+
+    if (this.mode === 'pvp'){
+      // El que muere pierde → gana el otro
+      winnerIdx = idx === 0 ? 1 : 0;
+    } else {
+      // MATA-MATA: el que muere más rápido GANA
+      winnerIdx = idx;
+    }
+
+    const w = this.boards[winnerIdx];
+    const l = this.boards[1 - winnerIdx];
+
+    const title = this.mode === 'pvp'
+      ? `🏆 ¡Gana ${w.label}!`
+      : `💀 ¡${w.label} gana por morir primero!`;
+
+    const sub = this.mode === 'pvp'
+      ? `${l.label} se quedó sin movimientos.<br>${w.label}: <b>${w.score}</b> pts · ${l.label}: <b>${l.score}</b> pts`
+      : `Se ahogó más rápido. Caos total.<br>${w.label}: <b>${w.score}</b> pts · ${l.label}: <b>${l.score}</b> pts`;
+
+    showResult(title, sub);
+  },
+
+  update(dt){
+    for (const b of this.boards) b.update(dt);
+  },
+
+  draw(){
+    for (const b of this.boards) b.draw();
+  }
+};
+
+
+/* =========================================================
+   ONLINE (WebRTC con PeerJS · sin servidor propio)
+   ========================================================= */
+const net = {
+  PREFIX: 'blockblast-',
+  peer: null, conn: null,
+  isHost: false, mode: null,
+  decided: false, myRematch: false, theirRematch: false,
+
+  $(id){ return document.getElementById(id); },
+  status(html){ this.$('netStatus').innerHTML = html; },
+
+  showModal(view){
+    this.$('netModal').classList.remove('hidden');
+    this.$('netHostBox').classList.toggle('hidden', view !== 'host');
+    this.$('netJoinBox').classList.toggle('hidden', view !== 'join');
+    this.$('netTitle').textContent = view === 'host' ? '🌐 Crear sala' : '🌐 Unirse a sala';
+  },
+  hideModal(){ this.$('netModal').classList.add('hidden'); },
+
+  genCode(){
+    const ch = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+    let s = '';
+    for (let i=0;i<5;i++) s += ch[(Math.random()*ch.length)|0];
+    return s;
+  },
+
+  cleanup(){
+    const c = this.conn, p = this.peer;
+    this.conn = null; this.peer = null;
+    try { c && c.close(); } catch(_){}
+    try { p && p.destroy(); } catch(_){}
+  },
+
+  /* ----- Crear sala (anfitrión) ----- */
+  host(mode){
+    this.cleanup();
+    this.isHost = true; this.mode = mode;
+    this.showModal('host');
+    this.$('roomCode').textContent = '·····';
+    if (typeof Peer === 'undefined'){
+      this.status('❌ No se pudo cargar PeerJS (¿sin internet?).'); return;
+    }
+    this.status('Creando sala…');
+
+    const create = () => {
+      const code = this.genCode();
+      const peer = new Peer(this.PREFIX + code);
+      this.peer = peer;
+      peer.on('open', () => {
+        if (peer !== this.peer) return;
+        this.code = code;
+        this.$('roomCode').textContent = code;
+        this.status('⏳ Esperando a tu rival…<br><small>Pásale el código o el enlace.</small>');
+      });
+      peer.on('connection', c => {
+        if (peer !== this.peer) return;
+        if (this.conn){ c.close(); return; }   // sala ocupada
+        this.attach(c);
+      });
+      peer.on('error', err => {
+        if (peer !== this.peer) return;
+        if (err.type === 'unavailable-id'){ try{peer.destroy();}catch(_){} create(); }
+        else this.status('❌ Error de red: ' + err.type);
+      });
+    };
+    create();
+  },
+
+  /* ----- Unirse (invitado) ----- */
+  join(raw){
+    const code = String(raw || '').toUpperCase().replace(/[^A-Z0-9]/g, '');
+    if (code.length < 4){ this.status('Escribe el código de la sala.'); return; }
+    this.cleanup();
+    this.isHost = false;
+    this.showModal('join');
+    if (typeof Peer === 'undefined'){
+      this.status('❌ No se pudo cargar PeerJS (¿sin internet?).'); return;
+    }
+    this.status('Conectando…');
+    const peer = new Peer();
+    this.peer = peer;
+    peer.on('open', () => {
+      if (peer !== this.peer) return;
+      const c = peer.connect(this.PREFIX + code, { reliable:true });
+      this.attach(c);
+      setTimeout(() => {
+        if (c === this.conn && !c.open) this.status('❌ No se pudo conectar con la sala.');
+      }, 12000);
+    });
+    peer.on('error', err => {
+      if (peer !== this.peer) return;
+      this.status(err.type === 'peer-unavailable'
+        ? '❌ No existe esa sala. Revisa el código.'
+        : '❌ Error de red: ' + err.type);
+    });
+  },
+
+  attach(c){
+    this.conn = c;
+    const onOpen = () => {
+      if (c !== this.conn) return;
+      if (this.isHost){
+        this.status('✅ ¡Rival conectado!');
+        this.startRound();
+      } else {
+        this.status('✅ Conectado. Esperando a que el anfitrión inicie…');
+      }
+    };
+    if (c.open) onOpen(); else c.on('open', onOpen);
+    c.on('data', m => { if (c === this.conn) this.onData(m); });
+    c.on('close', () => this.onClose(c));
+    c.on('error', () => this.onClose(c));
+  },
+
+  send(m){ try { if (this.conn && this.conn.open) this.conn.send(m); } catch(_){} },
+
+  /* Solo el anfitrión: reparte semilla y arranca los dos a la vez */
+  startRound(){
+    const seed = (Math.random() * 2147483647) | 0;
+    this.send({ t:'start', mode:this.mode, seed });
+    this.hideModal();
+    game.start(this.mode, 'online', { seed });
+  },
+
+  onData(m){
+    if (!m || !m.t) return;
+    switch (m.t){
+      case 'start':
+        this.hideModal();
+        game.start(m.mode, 'online', { seed: m.seed });
+        break;
+      case 's':
+        if (game.online && game.boards[1]) game.boards[1].applySnapshot(m.d);
+        break;
+      case 'dead':
+        if (this.isHost) this.decide('guest');
+        break;
+      case 'over':
+        game.finishOnline(m.deadSide);
+        break;
+      case 'rematch':
+        this.theirRematch = true;
+        this.checkRematch();
+        break;
+    }
+  },
+
+  /* El anfitrión es el árbitro: así los dos ven el mismo resultado aunque mueran a la vez */
+  decide(side){
+    if (this.decided || game.state !== 'playing') return;
+    this.decided = true;
+    this.send({ t:'over', deadSide:side });
+    game.finishOnline(side);
+  },
+
+  localDead(){
+    if (this.isHost) this.decide('host');
+    else this.send({ t:'dead' });
+  },
+
+  requestRematch(){
+    this.myRematch = true;
+    this.send({ t:'rematch' });
+    const ab = this.$('againBtn');
+    ab.disabled = true; ab.textContent = '⏳ Esperando al rival…';
+    this.checkRematch();
+  },
+  checkRematch(){
+    if (this.myRematch && this.theirRematch && this.isHost) this.startRound();
+  },
+
+  onClose(c){
+    if (c !== this.conn) return;
+    this.conn = null;
+    if (game.online && game.state === 'playing'){
+      game.state = 'over';
+      this.$('againBtn').style.display = 'none';
+      showResult('🔌 Rival desconectado', 'Se fue de la partida. ¡Ganas por abandono!');
+    } else if (game.online && game.state === 'over'){
+      const ab = this.$('againBtn');
+      ab.disabled = true; ab.textContent = '🔌 Rival desconectado';
+    } else {
+      this.status('❌ Se cerró la conexión.');
+    }
+  }
+};
+
+function leaveOnline(){
+  if (game.online){ net.cleanup(); game.online = false; }
+}
+
+/* Botones del lobby online */
+document.getElementById('joinCard').addEventListener('click', () => {
+  net.showModal('join');
+  net.status('Escribe el código que te pasó tu amigo.');
+  setTimeout(() => document.getElementById('joinInput').focus(), 50);
+});
+document.getElementById('joinGo').addEventListener('click', () => {
+  net.join(document.getElementById('joinInput').value);
+});
+document.getElementById('joinInput').addEventListener('keydown', e => {
+  if (e.key === 'Enter') net.join(e.target.value);
+});
+document.getElementById('netCancel').addEventListener('click', () => {
+  net.cleanup(); net.hideModal();
+});
+document.getElementById('copyBtn').addEventListener('click', async () => {
+  const code = net.code || '';
+  const text = location.protocol.startsWith('http')
+    ? location.origin + location.pathname + '?sala=' + code
+    : code;
+  try { await navigator.clipboard.writeText(text); net.status('📋 Copiado. ¡Envíaselo a tu rival!'); }
+  catch(_){ net.status('Copia el código manualmente: <b>' + code + '</b>'); }
+});
+document.getElementById('copyBtn').textContent =
+  location.protocol.startsWith('http') ? '📋 Copiar enlace' : '📋 Copiar código';
+
+/* Enlace de invitación ?sala=ABCDE */
+(function(){
+  const code = new URLSearchParams(location.search).get('sala');
+  if (code){
+    document.getElementById('joinInput').value = code.toUpperCase();
+    net.join(code);
+  }
+})();
+
+/* =========================================================
+   RESULTADO
+   ========================================================= */
+function showResult(title, sub){
+  document.getElementById('resultTitle').textContent = title;
+  document.getElementById('resultSub').innerHTML = sub;
+  document.getElementById('resultModal').classList.remove('hidden');
+}
+
+/* =========================================================
+   BUCLE PRINCIPAL
+   ========================================================= */
+function loop(ts){
+  const dt = Math.min(60, ts - game.lastTs) / 1000;
+  game.lastTs = ts;
+
+  if (game.state === 'playing' || game.state === 'over'){
+    if (game.state === 'playing') game.update(dt);
+    game.draw();
+  }
+  requestAnimationFrame(loop);
+}
+requestAnimationFrame(loop);
+
+/* =========================================================
+   UI / EVENTOS
+   ========================================================= */
+let pendingMode = null;
+
+document.querySelectorAll('.mode-card').forEach(btn => {
+  btn.addEventListener('click', () => {
+    const mode = btn.dataset.mode;
+    if (mode === 'classic'){
+      game.start('classic', null);
+    } else {
+      pendingMode = mode;
+      document.getElementById('oppModal').classList.remove('hidden');
+    }
+  });
+});
+
+document.querySelectorAll('#oppModal [data-opp]').forEach(btn => {
+  btn.addEventListener('click', () => {
+    document.getElementById('oppModal').classList.add('hidden');
+    if (pendingMode){
+      if (btn.dataset.opp === 'online') net.host(pendingMode);
+      else game.start(pendingMode, btn.dataset.opp);
+    }
+    pendingMode = null;
+  });
+});
+
+document.getElementById('cancelOpp').addEventListener('click', () => {
+  document.getElementById('oppModal').classList.add('hidden');
+  pendingMode = null;
+});
+
+document.getElementById('backBtn').addEventListener('click', () => {
+  leaveOnline();
+  game.state = 'menu';
+  game.boards = [];
+  document.getElementById('game').classList.add('hidden');
+  document.getElementById('resultModal').classList.add('hidden');
+  document.getElementById('menu').classList.remove('hidden');
+});
+
+document.getElementById('againBtn').addEventListener('click', () => {
+  if (game.online){ net.requestRematch(); return; }   // revancha: espera a que ambos acepten
+  document.getElementById('resultModal').classList.add('hidden');
+  game.start(game.mode, game.opponent);
+});
+
+document.getElementById('menuBtn').addEventListener('click', () => {
+  leaveOnline();
+  document.getElementById('resultModal').classList.add('hidden');
+  game.state = 'menu';
+  game.boards = [];
+  document.getElementById('game').classList.add('hidden');
+  document.getElementById('menu').classList.remove('hidden');
+});
+
+/* Evitar zoom / scroll accidental en móvil */
+document.addEventListener('gesturestart', e => e.preventDefault());
+window.addEventListener('resize', () => {
+  for (const b of game.boards) if (b.canvas) b.setupCanvas();
+});
+</script>
+</body>
+</html>
