@@ -164,6 +164,11 @@
   .room-item .rn{flex:1;min-width:0;font-weight:800;font-size:15px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
   .room-item .rm{display:block;font-size:11px;color:#9aa8d4;font-weight:600;margin-top:2px}
   .room-item .rc{font-size:13px;letter-spacing:2px;color:#ffd43b;font-weight:800}
+  #defList{display:flex;flex-direction:column;gap:8px;max-height:30vh;overflow-y:auto;margin-bottom:12px;text-align:left}
+  .room-item.def{border-color:rgba(255,212,59,.38);background:rgba(255,212,59,.08)}
+  .room-item.def:hover{border-color:rgba(255,212,59,.8);background:rgba(255,212,59,.16)}
+  .room-item.full{opacity:.5;cursor:not-allowed}
+  .lobby-msg{font-size:13px;font-weight:700;color:#ffd43b;background:rgba(255,212,59,.1);border:1px solid rgba(255,212,59,.35);border-radius:12px;padding:8px 10px;margin:-4px 0 12px;line-height:1.4}
   .modal-box input.txt-in{
     width:100%;margin-bottom:12px;padding:13px;border-radius:14px;
     border:1px solid rgba(255,255,255,.18);background:rgba(255,255,255,.07);color:#fff;
@@ -234,6 +239,12 @@
 <div id="lobbyModal" class="modal hidden">
   <div class="modal-box wide">
     <h2 id="lobbyTitle">🌐 Salas online</h2>
+    <div id="lobbyMsg" class="lobby-msg hidden"></div>
+    <div id="defBox">
+      <div class="net-label label-left">⚡ Salas rápidas · sin contraseña</div>
+      <div id="defList"></div>
+      <div class="net-label label-left">Salas de otros jugadores</div>
+    </div>
     <div id="lobbyInfo" class="lobby-info">Buscando salas…</div>
     <div id="roomList"></div>
 
@@ -1173,6 +1184,16 @@ function toast(text){
   clearTimeout(t._h); t._h = setTimeout(() => t.style.display = 'none', 9000);
 }
 
+/* Salas rápidas fijas: 2 por modo, sin contraseña. El código es también el ID de PeerJS. */
+const DEFAULT_ROOMS = [
+  { code:'PVP1',  mode:'pvp',   name:'Sala PvP #1' },
+  { code:'PVP2',  mode:'pvp',   name:'Sala PvP #2' },
+  { code:'TIME1', mode:'time',  name:'Sala Contrarreloj #1' },
+  { code:'TIME2', mode:'time',  name:'Sala Contrarreloj #2' },
+  { code:'MATA1', mode:'death', name:'Sala Mata-Mata #1' },
+  { code:'MATA2', mode:'death', name:'Sala Mata-Mata #2' }
+];
+
 const net = {
   PREFIX: 'blockblast-',
   peer: null, conn: null,
@@ -1233,6 +1254,9 @@ const net = {
     this.isHost = true; this.mode = mode; this.authed = false;
     this.roomName = (opts && opts.name) || '';
     this.roomPw   = (opts && opts.pw)   || '';
+    this.fixedCode = (opts && opts.fixed) || null;   // sala rápida predeterminada
+    this.defTries  = (opts && opts.tries) || 0;
+    this.joinDef   = null;
     this.showModal('host');
     this.$('roomCode').textContent = '·····';
     this.status('Cargando…');
@@ -1251,7 +1275,7 @@ const net = {
     this.status('Creando sala…');
 
     const create = () => {
-      const code = this.genCode();
+      const code = this.fixedCode || this.genCode();
       const peer = new Peer(this.PREFIX + code);
       this.peer = peer;
       peer.on('open', () => {
@@ -1259,10 +1283,12 @@ const net = {
         this.code = code;
         this.$('roomCode').textContent = code;
         this.$('netTitle').textContent = '🌐 ' + (this.roomName || 'Sala') + (this.roomPw ? ' 🔒' : '');
-        this.status('⏳ Esperando a tu rival…<br><small>Pásale el código o que te busque en la lista de salas.</small>');
+        this.status(this.fixedCode
+          ? '⏳ Esperando a tu rival…<br><small>Es una sala rápida: quien entre a esta sala se conecta solo.</small>'
+          : '⏳ Esperando a tu rival…<br><small>Pásale el código o que te busque en la lista de salas.</small>');
         directory.register({
           code, name: this.roomName || 'Sala sin nombre', mode,
-          locked: !!this.roomPw, busy: false, created: Date.now()
+          locked: !!this.roomPw, busy: false, created: Date.now(), def: !!this.fixedCode
         });
       });
       peer.on('connection', c => {
@@ -1272,7 +1298,15 @@ const net = {
       });
       peer.on('error', err => {
         if (peer !== this.peer) return;
-        if (err.type === 'unavailable-id'){ try{peer.destroy();}catch(_){} create(); }
+        if (err.type === 'unavailable-id'){
+          try{peer.destroy();}catch(_){}
+          if (this.fixedCode){
+            // Otro jugador acaba de ocupar esta sala rápida: entramos como invitado
+            const t = this.defTries || 0;
+            if (t < 3) this.joinDefault(this.mode, this.fixedCode, t);
+            else this.status('❌ No se pudo entrar a la sala. Vuelve a intentarlo.');
+          } else create();
+        }
         else this.status('❌ Error de red: ' + err.type);
       });
     };
@@ -1280,9 +1314,23 @@ const net = {
   },
 
   /* ----- Unirse (invitado) ----- */
+  /* Sala rápida: intenta entrar; si nadie la tiene abierta, la abre y espera */
+  joinDefault(mode, code, tries){
+    this.cleanup();
+    this.isHost = false;
+    this.joinPw = '';
+    this.joinDef = code; this.defMode = mode; this.defTries = tries || 0;
+    this.fixedCode = null;
+    this.showModal('wait');
+    this.status('Entrando a la sala…');
+    const tok = this.tok;
+    this.loadPeer().then(() => { if (tok === this.tok) this._join(code); })
+      .catch(() => this.status('❌ No se pudo cargar PeerJS. Revisa tu internet.'));
+  },
   join(raw, pw){
     this.cleanup();
     this.isHost = false;
+    this.joinDef = null; this.fixedCode = null;
     this.joinPw = pw || '';
     this.showModal('wait');
     this.status('Cargando…');
@@ -1313,6 +1361,12 @@ const net = {
     });
     peer.on('error', err => {
       if (peer !== this.peer) return;
+      if (err.type === 'peer-unavailable' && this.joinDef){
+        // Nadie tiene abierta esta sala rápida: la abrimos nosotros y esperamos al rival
+        const t = this.defTries || 0;
+        const d = DEFAULT_ROOMS.find(x => x.code === this.joinDef);
+        if (d && t < 3){ this.host(d.mode, { name:d.name, pw:'', fixed:d.code, tries:t + 1 }); return; }
+      }
       this.status(err.type === 'peer-unavailable'
         ? '❌ No existe esa sala. Revisa el código.'
         : '❌ Error de red: ' + err.type);
@@ -1371,7 +1425,10 @@ const net = {
           break;
         }
         this.authed = true; clearTimeout(this._authT);
-        directory.unregister();                      // sala llena: sale de la lista
+        if (this.fixedCode){                          // sala rápida: queda en la lista como "llena"
+          directory.register({ code:this.code, name:this.roomName, mode:this.mode,
+            locked:false, busy:true, created:Date.now(), def:true });
+        } else directory.unregister();               // sala llena: sale de la lista
         this.guestV = m.v;
         if (m.v !== VERSION) toast('⚠️ Tu rival tiene otra versión del juego (' + m.v + ' vs ' + VERSION + '). Usen el mismo archivo en los dos.');
         this.status('✅ ¡Rival conectado!');
@@ -1453,6 +1510,10 @@ const net = {
     } else if (game.online && game.state === 'over'){
       const ab = this.$('againBtn');
       ab.disabled = true; ab.textContent = '🔌 Rival desconectado';
+    } else if (!this.isHost && this.joinDef && !game.online){
+      const mode = lobbyUI.ctx ? lobbyUI.ctx.mode : this.defMode;
+      this.cleanup(); this.hideModal();
+      lobbyUI.open(mode, '😕 Esa sala ya está llena. Prueba la otra sala rápida o crea tu propia sala.');
     } else {
       this.status('❌ Se cerró la conexión.');
     }
@@ -1537,12 +1598,15 @@ const directory = {
     if (!r || typeof r !== 'object') return null;
     const code = String(r.code || '').toUpperCase().replace(/[^A-Z0-9]/g, '');
     if (code.length < 4 || code.length > 8) return null;
+    const d = DEFAULT_ROOMS.find(x => x.code === code);
+    if (d) return { code, name:d.name, mode:d.mode, locked:false, busy:!!r.busy, created:Number(r.created) || 0, def:true };
     return {
       code,
       name: String(r.name || 'Sala').slice(0, 20),
       mode: this.MODES.includes(r.mode) ? r.mode : 'pvp',
       locked: !!r.locked, busy: !!r.busy,
-      created: Number(r.created) || 0
+      created: Number(r.created) || 0,
+      def: false
     };
   },
   _serve(c){
@@ -1566,7 +1630,7 @@ const directory = {
     const now = Date.now(), out = [];
     for (const [k, e] of this.rooms){
       if (!e.local && now - e.ts > 30000){ this.rooms.delete(k); continue; }
-      if (!e.room.busy) out.push(e.room);
+      if (!e.room.busy || e.room.def) out.push(e.room);
     }
     return out;
   },
@@ -1635,9 +1699,17 @@ const lobbyUI = {
     this.$('lobbyMain').classList.toggle('hidden', pw);
     this.$('roomList').classList.toggle('hidden', pw);
     this.$('lobbyInfo').classList.toggle('hidden', pw);
+    this.$('defBox').classList.toggle('hidden', pw);
+    if (pw) this.$('lobbyMsg').classList.add('hidden');
   },
 
-  open(mode){
+  msg(text){
+    const el = this.$('lobbyMsg');
+    el.textContent = text || '';
+    el.classList.toggle('hidden', !text);
+  },
+
+  open(mode, note){
     this.ctx = { mode: mode || null };
     this.$('createModal').classList.add('hidden');
     this.$('lobbyModal').classList.remove('hidden');
@@ -1645,6 +1717,7 @@ const lobbyUI = {
     this.$('lobbyCreate').classList.toggle('hidden', !mode);
     this.$('lobbyCode').value = '';
     this._view('list');
+    this.msg(note || '');
     this.rooms = [];
     this.render(null);
     directory.start();
@@ -1666,11 +1739,45 @@ const lobbyUI = {
     });
   },
 
+  renderDefs(r){
+    const box = this.$('defList');
+    box.textContent = '';
+    const mode = this.ctx && this.ctx.mode;
+    for (const d of DEFAULT_ROOMS){
+      if (mode && d.mode !== mode) continue;
+      const live = r ? r.find(x => x.code === d.code) : null;
+      const full = !!(live && live.busy);
+      let st = '⚪ Toca para entrar';
+      if (r){
+        if (full) st = '🔴 Llena (2/2)';
+        else if (live) st = '🟡 Esperando rival (1/2)';
+        else st = '🟢 Libre (0/2) · entra y espera';
+      }
+      const el = document.createElement('div');
+      el.className = 'room-item def' + (full ? ' full' : '');
+      const left = document.createElement('div');
+      left.className = 'rn';
+      left.textContent = '⚡ ' + d.name;
+      const sm = document.createElement('span');
+      sm.className = 'rm'; sm.textContent = (mode ? '' : this.MODES[d.mode] + ' · ') + st;
+      left.appendChild(sm);
+      el.appendChild(left);
+      el.addEventListener('click', () => this.pickDef(d, full));
+      box.appendChild(el);
+    }
+  },
+  pickDef(d, full){
+    if (full){ this.msg('😕 Esa sala está llena. Prueba la otra sala rápida o crea tu propia sala.'); return; }
+    this.close();
+    net.joinDefault(d.mode, d.code, 0);
+  },
+
   render(r){
+    this.renderDefs(r);
     const info = this.$('lobbyInfo'), list = this.$('roomList');
     list.textContent = '';
     if (r === null){ info.textContent = '⏳ Conectando con el lobby… (mientras tanto puedes entrar con código)'; return; }
-    const rooms = r.slice().sort((a, b) => (b.created || 0) - (a.created || 0));
+    const rooms = r.filter(x => !x.def).sort((a, b) => (b.created || 0) - (a.created || 0));
     if (!rooms.length){
       info.textContent = 'No hay salas abiertas ahora mismo. ' +
         (this.ctx && this.ctx.mode ? '¡Crea una!' : 'Entra a un modo de juego para crear una.');
