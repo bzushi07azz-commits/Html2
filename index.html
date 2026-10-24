@@ -353,43 +353,52 @@ const H        = TRAY_Y + TRAY_H + PAD;  // 426
 /* =========================================================
    PIEZAS
    ========================================================= */
-const SHAPES = [
-  { cells:[[0,0]], color:'#ff7a7a' },
-
-  { cells:[[0,0],[0,1]], color:'#ffa94d' },
-  { cells:[[0,0],[1,0]], color:'#ffa94d' },
-
-  { cells:[[0,0],[0,1],[0,2]], color:'#ffd43b' },
-  { cells:[[0,0],[1,0],[2,0]], color:'#ffd43b' },
-
-  { cells:[[0,0],[0,1],[0,2],[0,3]], color:'#a9e34b' },
-  { cells:[[0,0],[1,0],[2,0],[3,0]], color:'#a9e34b' },
-
-  { cells:[[0,0],[0,1],[0,2],[0,3],[0,4]], color:'#38d9a9' },
-  { cells:[[0,0],[1,0],[2,0],[3,0],[4,0]], color:'#38d9a9' },
-
-  { cells:[[0,0],[0,1],[1,0],[1,1]], color:'#4dabf7' },
-  { cells:[[0,0],[0,1],[0,2],[1,0],[1,1],[1,2],[2,0],[2,1],[2,2]], color:'#748ffc' },
-
-  { cells:[[0,0],[0,1],[0,2],[1,0],[1,1],[1,2]], color:'#9775fa' },
-  { cells:[[0,0],[0,1],[1,0],[1,1],[2,0],[2,1]], color:'#9775fa' },
-
-  { cells:[[0,0],[1,0],[1,1]], color:'#f783ac' },
-  { cells:[[0,0],[0,1],[1,0]], color:'#f783ac' },
-  { cells:[[0,0],[0,1],[1,1]], color:'#f783ac' },
-  { cells:[[0,1],[1,0],[1,1]], color:'#f783ac' },
-
-  { cells:[[0,0],[0,1],[0,2],[1,1]], color:'#ff922b' },
-  { cells:[[0,1],[1,0],[1,1],[1,2]], color:'#ff922b' },
-
-  { cells:[[0,1],[0,2],[1,0],[1,1]], color:'#63e6be' },
-  { cells:[[0,0],[0,1],[1,1],[1,2]], color:'#63e6be' },
-
-  { cells:[[0,0],[1,0],[2,0],[2,1],[2,2]], color:'#e599f7' },
-  { cells:[[0,0],[0,1],[0,2],[1,0],[2,0]], color:'#e599f7' },
-  { cells:[[0,0],[0,1],[0,2],[1,2],[2,2]], color:'#e599f7' },
-  { cells:[[0,2],[1,2],[2,0],[2,1],[2,2]], color:'#e599f7' },
+/* Familias de piezas (como en Block Blast). Primero se elige la familia según su peso
+   y luego una de sus orientaciones, así las piezas con muchas giros no dominan. */
+const SHAPE_FAMILIES = [
+  { w:1.0, color:'#ff7a7a', forms:[ [[0,0]] ] },                                            // punto
+  { w:1.0, color:'#ffa94d', forms:[ [[0,0],[0,1]], [[0,0],[1,0]] ] },                       // dominó
+  { w:1.0, color:'#ffd43b', forms:[ [[0,0],[0,1],[0,2]], [[0,0],[1,0],[2,0]] ] },           // línea 3
+  { w:1.0, color:'#a9e34b', forms:[ [[0,0],[0,1],[0,2],[0,3]], [[0,0],[1,0],[2,0],[3,0]] ] }, // línea 4
+  { w:0.8, color:'#38d9a9', forms:[ [[0,0],[0,1],[0,2],[0,3],[0,4]], [[0,0],[1,0],[2,0],[3,0],[4,0]] ] }, // línea 5
+  { w:1.0, color:'#4dabf7', forms:[ [[0,0],[0,1],[1,0],[1,1]] ] },                          // cuadrado 2x2
+  { w:0.7, color:'#748ffc', forms:[ [[0,0],[0,1],[0,2],[1,0],[1,1],[1,2],[2,0],[2,1],[2,2]] ] }, // cuadrado 3x3
+  { w:1.0, color:'#9775fa', forms:[                                                        // rectángulo 2x3 / 3x2
+      [[0,0],[0,1],[0,2],[1,0],[1,1],[1,2]], [[0,0],[0,1],[1,0],[1,1],[2,0],[2,1]] ] },
+  { w:1.0, color:'#f783ac', forms:[                                                        // esquina de 3
+      [[0,0],[1,0],[1,1]], [[0,0],[0,1],[1,0]], [[0,0],[0,1],[1,1]], [[0,1],[1,0],[1,1]] ] },
+  { w:1.0, color:'#ff922b', forms:[                                                        // T de 4 (4 giros)
+      [[0,0],[0,1],[0,2],[1,1]], [[0,1],[1,0],[1,1],[1,2]],
+      [[0,0],[1,0],[2,0],[1,1]], [[0,1],[1,0],[1,1],[2,1]] ] },
+  { w:1.0, color:'#63e6be', forms:[                                                        // S / Z (4 giros)
+      [[0,1],[0,2],[1,0],[1,1]], [[0,0],[0,1],[1,1],[1,2]],
+      [[0,0],[1,0],[1,1],[2,1]], [[0,1],[1,0],[1,1],[2,0]] ] },
+  { w:1.2, color:'#ffc078', forms:[                                                        // L y J de 4 (8 giros)
+      [[0,0],[1,0],[2,0],[2,1]], [[0,1],[1,1],[2,1],[2,0]],
+      [[0,0],[0,1],[1,0],[2,0]], [[0,0],[0,1],[1,1],[2,1]],
+      [[0,0],[0,1],[0,2],[1,0]], [[0,0],[0,1],[0,2],[1,2]],
+      [[0,2],[1,0],[1,1],[1,2]], [[0,0],[1,0],[1,1],[1,2]] ] },
+  { w:0.9, color:'#e599f7', forms:[                                                        // L grande 3x3 (4 giros)
+      [[0,0],[1,0],[2,0],[2,1],[2,2]], [[0,0],[0,1],[0,2],[1,0],[2,0]],
+      [[0,0],[0,1],[0,2],[1,2],[2,2]], [[0,2],[1,2],[2,0],[2,1],[2,2]] ] },
+  { w:1.0, color:'#66d9e8', forms:[                                                        // P: rectángulo 2x3 sin una esquina (8)
+      [[0,1],[1,0],[1,1],[2,0],[2,1]], [[0,0],[1,0],[1,1],[2,0],[2,1]],
+      [[0,0],[0,1],[1,0],[1,1],[2,1]], [[0,0],[0,1],[1,0],[1,1],[2,0]],
+      [[0,1],[0,2],[1,0],[1,1],[1,2]], [[0,0],[0,1],[1,0],[1,1],[1,2]],
+      [[0,0],[0,1],[0,2],[1,1],[1,2]], [[0,0],[0,1],[0,2],[1,0],[1,1]] ] },
+  { w:0.5, color:'#ff8787', forms:[ [[0,1],[1,0],[1,1],[1,2],[2,1]] ] },                    // cruz (+)
+  { w:0.6, color:'#b197fc', forms:[                                                        // T grande 3x3 (4 giros)
+      [[0,0],[0,1],[0,2],[1,1],[2,1]], [[0,1],[1,1],[2,0],[2,1],[2,2]],
+      [[0,0],[1,0],[2,0],[1,1],[1,2]], [[0,2],[1,2],[2,2],[1,0],[1,1]] ] },
+  { w:0.6, color:'#69db7c', forms:[                                                        // U (4 giros)
+      [[0,0],[0,2],[1,0],[1,1],[1,2]], [[0,0],[0,1],[0,2],[1,0],[1,2]],
+      [[0,0],[0,1],[1,0],[2,0],[2,1]], [[0,0],[0,1],[1,1],[2,0],[2,1]] ] },
+  { w:0.6, color:'#ffe066', forms:[                                                        // S / Z grande 3x3 (4 giros)
+      [[0,0],[0,1],[1,1],[2,1],[2,2]], [[0,1],[0,2],[1,1],[2,0],[2,1]],
+      [[0,2],[1,0],[1,1],[1,2],[2,0]], [[0,0],[1,0],[1,1],[1,2],[2,2]] ] },
+  { w:0.4, color:'#74c0fc', forms:[ [[0,0],[1,1]], [[0,1],[1,0]] ] }                         // diagonal de 2
 ];
+const SHAPE_TOTAL_W = SHAPE_FAMILIES.reduce((t, f) => t + f.w, 0);
 
 /* RNG con semilla: en online ambos jugadores reciben EXACTAMENTE las mismas piezas */
 function mulberry32(a){
@@ -403,7 +412,9 @@ function mulberry32(a){
 
 function makePiece(rand){
   rand = rand || Math.random;
-  const s = SHAPES[(rand()*SHAPES.length)|0];
+  let x = rand() * SHAPE_TOTAL_W, fam = SHAPE_FAMILIES[SHAPE_FAMILIES.length - 1];
+  for (const f of SHAPE_FAMILIES){ if ((x -= f.w) < 0){ fam = f; break; } }
+  const s = { cells: fam.forms[(rand()*fam.forms.length)|0], color: fam.color };
   let minR = Infinity, minC = Infinity;
   for (const [r,c] of s.cells){ if(r<minR)minR=r; if(c<minC)minC=c; }
   return {
@@ -1171,7 +1182,7 @@ const game = {
 /* =========================================================
    ONLINE (WebRTC con PeerJS · sin servidor propio)
    ========================================================= */
-const VERSION = 'v8';
+const VERSION = 'v9';
 document.getElementById('ver').textContent = 'versión ' + VERSION;
 function toast(text){
   let t = document.getElementById('toast');
@@ -1183,6 +1194,36 @@ function toast(text){
   t.textContent = text; t.style.display = 'block';
   clearTimeout(t._h); t._h = setTimeout(() => t.style.display = 'none', 9000);
 }
+
+/* =========================================================
+   CONEXIÓN ENTRE REDES DISTINTAS (STUN + TURN)
+   Con wifi distinto / datos móviles, la conexión directa a veces es imposible y hace falta
+   un servidor TURN que retransmita los datos. Para máxima fiabilidad crea una cuenta
+   gratis en https://www.metered.ca (Open Relay, 20 GB/mes), copia tu usuario y clave
+   de "TURN Credentials" y pégalos aquí abajo. Si los dejas vacíos se usan los servidores
+   públicos de prueba (pueden fallar o ir lentos).
+   ========================================================= */
+const MY_TURN = { username: '', credential: '' };
+const ICE_SERVERS = [
+  { urls: 'stun:stun.l.google.com:19302' },
+  { urls: 'stun:stun1.l.google.com:19302' },
+  { urls: 'stun:stun.relay.metered.ca:80' }
+];
+if (MY_TURN.username && MY_TURN.credential){
+  for (const u of [
+    'turn:global.relay.metered.ca:80',
+    'turn:global.relay.metered.ca:80?transport=tcp',
+    'turn:global.relay.metered.ca:443',
+    'turns:global.relay.metered.ca:443?transport=tcp'
+  ]) ICE_SERVERS.push({ urls: u, username: MY_TURN.username, credential: MY_TURN.credential });
+}
+for (const u of [
+  'turn:openrelay.metered.ca:80',
+  'turn:openrelay.metered.ca:80?transport=tcp',
+  'turn:openrelay.metered.ca:443',
+  'turns:openrelay.metered.ca:443?transport=tcp'
+]) ICE_SERVERS.push({ urls: u, username: 'openrelayproject', credential: 'openrelayproject' });
+const PEER_OPTS = { config: { iceServers: ICE_SERVERS, iceCandidatePoolSize: 4 } };
 
 /* Salas rápidas fijas: 2 por modo, sin contraseña. El código es también el ID de PeerJS. */
 const DEFAULT_ROOMS = [
@@ -1276,7 +1317,7 @@ const net = {
 
     const create = () => {
       const code = this.fixedCode || this.genCode();
-      const peer = new Peer(this.PREFIX + code);
+      const peer = new Peer(this.PREFIX + code, PEER_OPTS);
       this.peer = peer;
       peer.on('open', () => {
         if (peer !== this.peer) return;
@@ -1295,11 +1336,15 @@ const net = {
         if (peer !== this.peer) return;
         if (c.metadata && c.metadata.probe){   // solo preguntan si hay alguien dentro
           const reply = () => {
-            try { c.send({ t:'status', busy: !!this.conn || !!(this.fixedCode && game.online) }); } catch(_){}
+            try { c.send({ t:'status', busy: !!(this.conn && this.conn.open) || !!(this.fixedCode && game.online) }); } catch(_){}
             setTimeout(() => { try { c.close(); } catch(_){} }, 500);
           };
           if (c.open) reply(); else c.on('open', reply);
           return;
+        }
+        if (this.conn && !this.conn.open){            // intento anterior que nunca llegó a conectar
+          try { this.conn.close(); } catch(_){}
+          this.conn = null;
         }
         if (this.conn || (this.fixedCode && game.online)){ c.close(); return; }   // sala ocupada
         this.attach(c);
@@ -1357,15 +1402,15 @@ const net = {
     }
     this.joinCode = code;
     this.status('Conectando…');
-    const peer = new Peer();
+    const peer = new Peer(undefined, PEER_OPTS);
     this.peer = peer;
     peer.on('open', () => {
       if (peer !== this.peer) return;
       const c = peer.connect(this.PREFIX + code, { reliable:true });
       this.attach(c);
       setTimeout(() => {
-        if (c === this.conn && !c.open) this.status('❌ No se pudo conectar con la sala.');
-      }, 12000);
+        if (c === this.conn && !c.open) this.status('❌ No se pudo conectar con la sala. Si están en redes distintas, revisa tu internet e inténtalo de nuevo.');
+      }, 20000);
     });
     peer.on('error', err => {
       if (peer !== this.peer) return;
@@ -1383,6 +1428,17 @@ const net = {
 
   attach(c){
     this.conn = c;
+    clearTimeout(this._openT);
+    if (this.isHost && !c.open){
+      // Si el invitado no llega a conectar (red bloqueada), liberamos la sala
+      this._openT = setTimeout(() => {
+        if (c === this.conn && !c.open){
+          this.conn = null;
+          try { c.close(); } catch(_){}
+          this.status('⏳ Esperando a tu rival…<br><small>Alguien intentó entrar pero no pudo conectar. Sigues esperando.</small>');
+        }
+      }, 15000);
+    }
     const onOpen = () => {
       if (c !== this.conn) return;
       if (this.isHost){
@@ -1568,7 +1624,7 @@ const directory = {
   /* Intenta ser el hub; si el ID ya está ocupado, se conecta a él */
   _become(){
     if (this.peer || typeof Peer === 'undefined') return;
-    const p = new Peer(this.HUB_ID);
+    const p = new Peer(this.HUB_ID, PEER_OPTS);
     this.peer = p;
     p.on('open', () => {
       if (p !== this.peer) return;
@@ -1586,7 +1642,7 @@ const directory = {
 
   _asClient(){
     this._kill();
-    const p = new Peer();
+    const p = new Peer(undefined, PEER_OPTS);
     this.peer = p;
     p.on('open', () => {
       if (p !== this.peer) return;
@@ -1763,7 +1819,7 @@ const lobbyUI = {
     const P = this.probes;
     if (typeof Peer === 'undefined') return;
     if (P.peer){ if (P.open) this._probeRun(); return; }
-    const p = new Peer();
+    const p = new Peer(undefined, PEER_OPTS);
     P.peer = p;
     p.on('open', () => { if (p === P.peer){ P.open = true; this._probeRun(); } });
     p.on('error', err => {
@@ -1788,7 +1844,7 @@ const lobbyUI = {
       let c;
       try { c = P.peer.connect(net.PREFIX + d.code, { reliable:true, metadata:{ probe:true } }); }
       catch(_){ continue; }
-      P.fl[d.code] = { c, t: setTimeout(() => this._probeSet(d.code, 'taken'), 6000) };
+      P.fl[d.code] = { c, t: setTimeout(() => this._probeSet(d.code, 'taken'), 8000) };
       c.on('data', m => { if (m && m.t === 'status') this._probeSet(d.code, m.busy ? 'full' : 'wait'); });
       c.on('error', () => {});
     }
