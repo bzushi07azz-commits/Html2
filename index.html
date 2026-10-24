@@ -1293,7 +1293,15 @@ const net = {
       });
       peer.on('connection', c => {
         if (peer !== this.peer) return;
-        if (this.conn){ c.close(); return; }   // sala ocupada
+        if (c.metadata && c.metadata.probe){   // solo preguntan si hay alguien dentro
+          const reply = () => {
+            try { c.send({ t:'status', busy: !!this.conn || !!(this.fixedCode && game.online) }); } catch(_){}
+            setTimeout(() => { try { c.close(); } catch(_){} }, 500);
+          };
+          if (c.open) reply(); else c.on('open', reply);
+          return;
+        }
+        if (this.conn || (this.fixedCode && game.online)){ c.close(); return; }   // sala ocupada
         this.attach(c);
       });
       peer.on('error', err => {
@@ -1727,11 +1735,13 @@ const lobbyUI = {
   },
   close(){
     clearInterval(this.timer); this.timer = null;
+    this._probeStop();
     this.$('lobbyModal').classList.add('hidden');
   },
   leave(){ this.close(); this.ctx = null; },
 
   poll(){
+    this._probe();
     directory.list().then(r => {
       if (this.$('lobbyModal').classList.contains('hidden')) return;
       if (r) this.rooms = r;
@@ -1739,27 +1749,85 @@ const lobbyUI = {
     });
   },
 
+  /* Sondeo directo de las salas rápidas: pregunta a cada una si hay alguien dentro.
+     No depende del lobby compartido, así que funciona entre PC y teléfono. */
+  probes: { peer:null, open:false, st:{}, fl:{}, tok:0 },
+  _probeStop(){
+    const P = this.probes; P.tok++;
+    for (const k in P.fl){ clearTimeout(P.fl[k].t); try { P.fl[k].c.close(); } catch(_){} }
+    P.fl = {}; P.st = {}; P.open = false;
+    const p = P.peer; P.peer = null;
+    try { p && p.destroy(); } catch(_){}
+  },
+  _probe(){
+    const P = this.probes;
+    if (typeof Peer === 'undefined') return;
+    if (P.peer){ if (P.open) this._probeRun(); return; }
+    const p = new Peer();
+    P.peer = p;
+    p.on('open', () => { if (p === P.peer){ P.open = true; this._probeRun(); } });
+    p.on('error', err => {
+      if (p !== P.peer) return;
+      if (err.type === 'peer-unavailable'){
+        const msg = String(err.message || '');
+        const ks = Object.keys(P.fl);
+        let hit = ks.find(k => msg.includes(net.PREFIX + k));
+        if (!hit && ks.length === 1) hit = ks[0];
+        if (hit) this._probeSet(hit, 'free');           // nadie tiene esa sala abierta
+      } else {
+        this._probeStop();                              // se recrea en el próximo ciclo
+      }
+    });
+  },
+  _probeRun(){
+    const P = this.probes, mode = this.ctx && this.ctx.mode;
+    if (!P.peer || !P.open) return;
+    for (const d of DEFAULT_ROOMS){
+      if (mode && d.mode !== mode) continue;
+      if (P.fl[d.code]) continue;
+      let c;
+      try { c = P.peer.connect(net.PREFIX + d.code, { reliable:true, metadata:{ probe:true } }); }
+      catch(_){ continue; }
+      P.fl[d.code] = { c, t: setTimeout(() => this._probeSet(d.code, 'taken'), 6000) };
+      c.on('data', m => { if (m && m.t === 'status') this._probeSet(d.code, m.busy ? 'full' : 'wait'); });
+      c.on('error', () => {});
+    }
+  },
+  _probeSet(code, state){
+    const P = this.probes, fl = P.fl[code];
+    if (fl){ clearTimeout(fl.t); try { fl.c.close(); } catch(_){} delete P.fl[code]; }
+    P.st[code] = { s: state, ts: Date.now() };
+    if (!this.$('lobbyModal').classList.contains('hidden'))
+      this.renderDefs(this.lastR === undefined ? null : this.lastR);
+  },
+
   renderDefs(r){
     const box = this.$('defList');
     box.textContent = '';
     const mode = this.ctx && this.ctx.mode;
+    const TXT = {
+      free:  '🟢 Libre (0/2) · entra y espera',
+      wait:  '🟡 Esperando rival (1/2)',
+      taken: '🟡 Hay alguien dentro · intenta entrar',
+      full:  '🔴 Llena (2/2)',
+      none:  '⚪ Toca para entrar'
+    };
     for (const d of DEFAULT_ROOMS){
       if (mode && d.mode !== mode) continue;
       const live = r ? r.find(x => x.code === d.code) : null;
-      const full = !!(live && live.busy);
-      let st = '⚪ Toca para entrar';
-      if (r){
-        if (full) st = '🔴 Llena (2/2)';
-        else if (live) st = '🟡 Esperando rival (1/2)';
-        else st = '🟢 Libre (0/2) · entra y espera';
-      }
+      const pr = this.probes.st[d.code];
+      let state = 'none';
+      if (pr) state = pr.s;                                   // el sondeo directo manda
+      else if (r) state = live ? (live.busy ? 'full' : 'wait') : 'free';
+      if (state === 'taken' && live && live.busy) state = 'full';
+      const full = state === 'full';
       const el = document.createElement('div');
       el.className = 'room-item def' + (full ? ' full' : '');
       const left = document.createElement('div');
       left.className = 'rn';
       left.textContent = '⚡ ' + d.name;
       const sm = document.createElement('span');
-      sm.className = 'rm'; sm.textContent = (mode ? '' : this.MODES[d.mode] + ' · ') + st;
+      sm.className = 'rm'; sm.textContent = (mode ? '' : this.MODES[d.mode] + ' · ') + TXT[state];
       left.appendChild(sm);
       el.appendChild(left);
       el.addEventListener('click', () => this.pickDef(d, full));
@@ -1773,6 +1841,7 @@ const lobbyUI = {
   },
 
   render(r){
+    this.lastR = r;
     this.renderDefs(r);
     const info = this.$('lobbyInfo'), list = this.$('roomList');
     list.textContent = '';
